@@ -22,16 +22,17 @@ class HotelStoreTest {
     private Db db;
     private HotelStore store;
     private long holder, model, room;
+    private int nextDocument;
 
     @BeforeEach void setup() throws Exception {
         db = new Db(directory.resolve("hotel.db")); db.initialize();
         store = new HotelStore(db, Clock.fixed(Instant.parse("2026-11-27T10:00:00Z"), HotelStore.ZONE));
-        store.setup("Hôtel test", "3 étoiles", "Admin", "admin", SECRET.toCharArray(), false);
+        store.setup("Hôtel test",3,"Admin",SECRET.toCharArray(),Set.of("DINNER"));
         model = store.saveModel(0, "Classique", 2, 1, "Balcon", List.of(new HotelStore.MealRate("DINNER", 100000, null, 50)));
         store.saveRoom(0, "101", model, 900000, true); room = store.rooms().getFirst().number("id");
         holder = guest("Amine", 30, "MALE");
     }
-    private long guest(String name, int age, String sex) throws SQLException { return store.saveGuest(0, "Client", name, TODAY.minusYears(age), sex, "", ""); }
+    private long guest(String name, int age, String sex) throws SQLException { return store.saveGuest(0, "Client", name, TODAY.minusYears(age), sex, "", "","NATIONAL_ID",age>=18?"100000"+(++nextDocument):""); }
     private StayDraft draft(List<Long> guests) { return new StayDraft(room, TODAY, TODAY.plusDays(3), guests, Set.of("DINNER")); }
     private long book(StayDraft draft) throws SQLException { return store.book(holder, List.of(draft), "", store.quote(holder, List.of(draft), 0).total()); }
 
@@ -80,12 +81,13 @@ class HotelStoreTest {
         store.saveRoom(room,"101",model,2000000,true);
         assertThrows(IllegalArgumentException.class, () -> store.book(holder,List.of(stay),"",old));
         long admin = store.user().id();
-        assertThrows(SQLException.class, () -> store.saveUser(admin,"Admin","admin","ADMIN",false,new char[0]));
-        store.saveUser(0,"Réception","worker","WORKER",true,SECRET.toCharArray());
-        store.login("worker",SECRET.toCharArray());
+        assertThrows(SQLException.class, () -> store.saveUser(admin,"Admin","ADMIN",false,new char[0]));
+        store.saveUser(0,"Réception","WORKER",true,SECRET.toCharArray());
+        long worker=store.loginAccounts("WORKER").getFirst().number("id");store.login(worker,"WORKER",SECRET.toCharArray());
         assertThrows(IllegalArgumentException.class, () -> store.saveRoom(0,"999",model,100,true));
         assertThrows(IllegalArgumentException.class, store::dailyReceipts);
-        assertThrows(IllegalArgumentException.class, () -> store.login("worker","incorrect".toCharArray()));
+        assertThrows(IllegalArgumentException.class, () -> store.login(worker,"WORKER","incorrect".toCharArray()));
+        assertThrows(IllegalArgumentException.class, () -> store.login(worker,"ADMIN",SECRET.toCharArray()));
     }
     @Test void cancellationRefundAndImmutableMoney() throws Exception {
         long booking = book(draft(List.of(holder))); long session = store.openCash(0);
@@ -98,11 +100,37 @@ class HotelStoreTest {
         assertThrows(SQLException.class, () -> db.tx(c -> Db.execute(c,"DELETE FROM cash_entry")));
         assertEquals(2,store.cashEntries(session).size());
     }
-    @Test void demoIsOptionalAndSchemaIsHealthy() throws Exception {
+    @Test void schemaAndTestFixturesAreHealthy() throws Exception {
         Db demoDb = new Db(directory.resolve("demo.db")); demoDb.initialize(); HotelStore demo = new HotelStore(demoDb);
-        demo.setup("Exemple","3 étoiles","Démo","demo",SECRET.toCharArray(),true);
+        demo.setup("Exemple",3,"Démo",SECRET.toCharArray(),Set.of("BREAKFAST"));com.hotelsys.service.DemoData.seed(demo);
         assertEquals(8,demo.rooms().size()); assertEquals(6,demo.bookings().size());
-        assertThrows(IllegalArgumentException.class,demo::loadDemo);
         demoDb.read(c -> { assertEquals("ok", Db.one(c,"PRAGMA integrity_check").text("integrity_check")); assertTrue(Db.rows(c,"PRAGMA foreign_key_check").isEmpty()); return null; });
+    }
+    @Test void businessFiguresUsePeriodNightsAndSeparateCashFromSales() throws Exception {
+        long booking=book(draft(List.of(holder)));long session=store.openCash(100000);
+        store.cashEntry(session,"PAYMENT",booking,500000,"");store.cashEntry(session,"EXPENSE",null,50000,"Achat");
+        var totals=store.statistics(TODAY,TODAY).totals();
+        assertEquals(1,totals.number("room_nights"));assertEquals(1000000,totals.number("sales"));assertEquals(900000,totals.number("adr"));
+        assertEquals(10000,totals.number("occupancy_bp"));assertEquals(450000,totals.number("cash_flow"));assertEquals(2500000,totals.number("open_balance"));
+        store.changeStatus(store.stays(booking).getFirst().number("id"),"CANCELLED");
+        assertEquals(0,store.statistics(TODAY,TODAY).totals().number("sales"));assertEquals(500000,store.statistics(TODAY,TODAY).totals().number("net_receipts"));
+    }
+    @Test void disabledMealsAndDuplicateDocumentsAreRejected() throws Exception {
+        assertThrows(SQLException.class,() -> store.saveGuest(0,"Autre","Client",TODAY.minusYears(30),"MALE","","","NATIONAL_ID","1000001"));
+        assertThrows(IllegalArgumentException.class,() -> store.saveGuest(0,"Autre","Client",TODAY.minusYears(30),"MALE","","","NATIONAL_ID","ABC"));
+        store.settings("Hôtel test",4,6,12,Set.of("BREAKFAST"),false);
+        assertTrue(store.offeredMealRates(model).isEmpty());assertThrows(IllegalArgumentException.class,() -> book(draft(List.of(holder))));
+        assertEquals("4 étoiles",store.hotel().text("category"));assertFalse(store.hotel().flag("payment_sound"));
+        assertThrows(IllegalArgumentException.class,() -> store.setup("Autre",2,"Autre",SECRET.toCharArray(),Set.of()));
+    }
+    @Test void versionOneMigrationPreservesDataAndCreatesBackup() throws Exception {
+        Path file=directory.resolve("legacy.db");Db legacy=new Db(file);
+        try(var c=legacy.connect();var statement=c.createStatement();var input=getClass().getResourceAsStream("/db/migrations/001_initial.sql")){
+            statement.executeUpdate(new String(java.util.Objects.requireNonNull(input).readAllBytes(),java.nio.charset.StandardCharsets.UTF_8));
+            statement.executeUpdate("UPDATE hotel SET name='Hôtel conservé'");statement.executeUpdate("INSERT INTO person(last_name,first_name,birth_date,sex) VALUES ('Client','Ancien','1990-01-01','MALE')");statement.executeUpdate("PRAGMA user_version=1");
+        }
+        legacy.initialize();assertEquals("Hôtel conservé",legacy.read(c -> Db.one(c,"SELECT name FROM hotel")).text("name"));
+        assertEquals(2L,legacy.read(c -> Db.scalar(c,"PRAGMA user_version")).longValue());assertEquals(1L,legacy.read(c -> Db.scalar(c,"SELECT count(*) FROM person")).longValue());
+        try(var backups=java.nio.file.Files.list(directory.resolve("backups"))){assertTrue(backups.findAny().isPresent());}
     }
 }

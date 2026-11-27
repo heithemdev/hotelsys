@@ -26,6 +26,9 @@ public final class HotelStore {
     public static final ZoneId ZONE = ZoneId.of("Africa/Algiers");
     private static final DateTimeFormatter UTC = new DateTimeFormatterBuilder().appendInstant(3).toFormatter();
     private static final Set<String> MEALS = Set.of("BREAKFAST", "LUNCH", "DINNER");
+    public static String category(int stars) { check(stars >= 0 && stars <= 5,"Classement invalide"); return stars == 0 ? "Non classé" : stars + (stars == 1 ? " étoile" : " étoiles"); }
+    public static int stars(String category) { return category.matches("^[1-5].*") ? category.charAt(0)-'0' : 0; }
+    private static boolean mealEnabled(Row hotel,String meal) { return hotel.flag(meal.toLowerCase(Locale.ROOT)+"_enabled"); }
     private final Db db;
     private final Clock clock;
     private User user;
@@ -65,26 +68,34 @@ public final class HotelStore {
         String name = required(value, "Identifiant", 40).toLowerCase(Locale.ROOT);
         check(name.matches("[a-z0-9][a-z0-9._-]{2,39}"), "Identifiant : 3 à 40 lettres, chiffres, points ou tirets"); return name;
     }
-    public User setup(String hotelName, String category, String display, String login, char[] password, boolean demo) throws SQLException {
+    public User setup(String hotelName,int stars,String display,char[] password,Set<String> meals) throws SQLException {
+        check(MEALS.containsAll(meals),"Service inconnu");
+        return setupAccount(hotelName,category(stars),display,"admin."+java.util.UUID.randomUUID().toString().substring(0,12),password,meals);
+    }
+    private User setupAccount(String hotelName,String category,String display,String login,char[] password,Set<String> meals) throws SQLException {
         String name = required(hotelName, "Nom de l'hôtel", 150); String cat = required(category, "Catégorie", 80);
         String person = required(display, "Votre nom", 100); String username = loginName(login); String hash = Passwords.hash(password);
         User created = db.tx(c -> {
             check(scalar(c, "SELECT count(*) FROM app_user") == 0, "L'administrateur existe déjà");
-            execute(c, "UPDATE hotel SET name=?, category=? WHERE id=1", name, cat);
+            execute(c, "UPDATE hotel SET name=?,category=?,breakfast_enabled=?,lunch_enabled=?,dinner_enabled=? WHERE id=1", name, cat, meals.contains("BREAKFAST")?1:0,meals.contains("LUNCH")?1:0,meals.contains("DINNER")?1:0);
             long id = insert(c, "INSERT INTO app_user(display_name,username,password_hash,role) VALUES (?,?,?,'ADMIN')", person, username, hash);
-            if (demo) { DemoData.create(c, id, today(), now()); }
             return new User(id, person, username, "ADMIN");
         });
         user = created; return created;
     }
-    public User login(String login, char[] password) throws SQLException {
-        String name = optional(login, 40).toLowerCase(Locale.ROOT);
-        User result = db.read(c -> {
-            List<Row> resultRows = rows(c, "SELECT * FROM app_user WHERE username=? AND active=1", name);
-            check(!resultRows.isEmpty() && Passwords.verify(password, resultRows.getFirst().text("password_hash")), "Identifiant ou mot de passe incorrect");
-            Row row = resultRows.getFirst(); return new User(row.number("id"), row.text("display_name"), row.text("username"), row.text("role"));
-        });
-        user = result; return result;
+    public List<Row> loginAccounts(String role) throws SQLException {
+        check(Set.of("ADMIN","WORKER").contains(role),"Rôle invalide");
+        return db.read(c -> rows(c,"SELECT id,display_name AS label FROM app_user WHERE role=? AND active=1 ORDER BY display_name,id",role));
+    }
+    public User login(long id,String role,char[] password) throws SQLException {
+        User result=db.read(c -> {
+            List<Row> found=rows(c,"SELECT * FROM app_user WHERE id=? AND role=? AND active=1",id,role);
+            check(!found.isEmpty() && Passwords.verify(password,found.getFirst().text("password_hash")),"Compte ou mot de passe incorrect");
+            Row row=found.getFirst(); return new User(row.number("id"),row.text("display_name"),row.text("username"),row.text("role"));
+        }); user=result; return result;
+    }
+    public List<Row> offeredMealRates(long model) throws SQLException {
+        return db.read(c -> { require(c,false); Row hotel=one(c,"SELECT * FROM hotel WHERE id=1"); return rows(c,"SELECT * FROM room_model_meal WHERE model_id=?",model).stream().filter(r -> mealEnabled(hotel,r.text("meal"))).toList(); });
     }
     public List<Row> models() throws SQLException { return read(false, "SELECT *, name AS label FROM room_model ORDER BY name"); }
     public List<Row> mealRates(long model) throws SQLException { return read(false, "SELECT * FROM room_model_meal WHERE model_id=? ORDER BY meal", model); }
@@ -100,14 +111,20 @@ public final class HotelStore {
     public List<Row> guests() throws SQLException {
         return read(false, "SELECT *, first_name || ' ' || last_name AS label FROM person ORDER BY last_name,first_name");
     }
-    public long saveGuest(long id, String last, String first, LocalDate birth, String sex, String phone, String email) throws SQLException {
+    public long saveGuest(long id, String last, String first, LocalDate birth, String sex, String phone, String email,String identityType,String identityNumber) throws SQLException {
         String surname = required(last, "Nom", 100); String given = required(first, "Prénom", 100);
         check(birth != null && birth.getYear() >= 1900 && !birth.isAfter(today()), "Date de naissance invalide");
         check(Set.of("MALE", "FEMALE").contains(sex), "Sexe requis");
         String contact = optional(phone, 40); String mail = optional(email, 200);
+        check(contact.isEmpty() || contact.matches("\\+?[0-9]{6,15}"),"Téléphone : 6 à 15 chiffres, avec + facultatif");
+        check(mail.isEmpty() || mail.matches("[^\\s@]+@[^\\s@]+\\.[^\\s@]+"),"Adresse e-mail invalide");
+        check(Set.of("NATIONAL_ID","PASSPORT","RESIDENCE_PERMIT").contains(identityType),"Type de document requis");
+        String document=optional(identityNumber,20).toUpperCase(Locale.ROOT);
+        check(under(birth,18,today()) || !document.isEmpty(),"Le numéro du document d'identité est obligatoire pour un adulte");
+        check(document.isEmpty() || document.matches(identityType.equals("NATIONAL_ID")?"[0-9]{3,20}":"[A-Z0-9]{3,20}"),"Numéro de document invalide (3 à 20 caractères)");
         return db.tx(c -> {
             require(c, false);
-            if (id == 0) { return insert(c, "INSERT INTO person(last_name,first_name,birth_date,sex,phone,email) VALUES (?,?,?,?,?,?)", surname, given, birth.toString(), sex, contact, mail); }
+            if (id == 0) { return insert(c, "INSERT INTO person(last_name,first_name,birth_date,sex,phone,email,identity_type,identity_number) VALUES (?,?,?,?,?,?,?,?)", surname, given, birth.toString(), sex, contact, mail,identityType,document.isEmpty()?null:document); }
             Row old = one(c, "SELECT * FROM person WHERE id=?", id);
             if (!old.text("birth_date").equals(birth.toString()) || !old.text("sex").equals(sex)) {
                 check(scalar(c, "SELECT count(*) FROM reservation_guest g JOIN reservation_room r ON r.id=g.reservation_room_id WHERE g.person_id=? AND r.status IN ('RESERVED','CHECKED_IN')", id) == 0,
@@ -115,7 +132,7 @@ public final class HotelStore {
                 check(scalar(c, "SELECT count(*) FROM reservation b JOIN reservation_room r ON r.reservation_id=b.id WHERE b.holder_id=? AND r.status IN ('RESERVED','CHECKED_IN')", id) == 0,
                         "Le titulaire possède une réservation active ; corrigez-la avant son identité");
             }
-            execute(c, "UPDATE person SET last_name=?,first_name=?,birth_date=?,sex=?,phone=?,email=? WHERE id=?", surname, given, birth.toString(), sex, contact, mail, id); return id;
+            execute(c, "UPDATE person SET last_name=?,first_name=?,birth_date=?,sex=?,phone=?,email=?,identity_type=?,identity_number=? WHERE id=?", surname, given, birth.toString(), sex, contact, mail,identityType,document.isEmpty()?null:document,id); return id;
         });
     }
     public record MealRate(String meal, long adult, Long childFixed, Integer discount) { }
@@ -169,13 +186,19 @@ public final class HotelStore {
         check(bedAge >= 0 && bedAge <= 18 && mealAge >= 0 && mealAge <= 18, "Seuils d'âge : 0 à 18 ans");
         db.tx(c -> { require(c, true); execute(c, "UPDATE hotel SET name=?,category=?,bed_sharing_age=?,meal_child_age=? WHERE id=1", title, cat, bedAge, mealAge); return null; });
     }
+    public void settings(String name,int stars,int bedAge,int mealAge,Set<String> meals,boolean sound) throws SQLException {
+        String title=required(name,"Nom de l'hôtel",150), rating=category(stars);
+        check(bedAge>=0 && bedAge<=18 && mealAge>=0 && mealAge<=18 && MEALS.containsAll(meals),"Paramètres invalides");
+        db.tx(c -> { require(c,true); execute(c,"UPDATE hotel SET name=?,category=?,bed_sharing_age=?,meal_child_age=?,breakfast_enabled=?,lunch_enabled=?,dinner_enabled=?,payment_sound=? WHERE id=1",title,rating,bedAge,mealAge,meals.contains("BREAKFAST")?1:0,meals.contains("LUNCH")?1:0,meals.contains("DINNER")?1:0,sound?1:0); return null; });
+    }
     public List<Row> workers() throws SQLException { return read(true, "SELECT id,display_name,username,role,active,created_at FROM app_user ORDER BY display_name"); }
-    public void saveUser(long id, String name, String login, String role, boolean active, char[] password) throws SQLException {
+    private void saveUserAccount(long id, String name, String login, String role, boolean active, char[] password) throws SQLException {
         String display = required(name, "Nom", 100); String username = loginName(login);
         check(Set.of("ADMIN", "WORKER").contains(role), "Rôle invalide");
         String hash = password.length > 0 ? Passwords.hash(password) : null; check(id != 0 || hash != null, "Mot de passe requis");
         db.tx(c -> {
             require(c, true);
+            check(scalar(c,"SELECT count(*) FROM app_user WHERE role=? AND display_name=? COLLATE NOCASE AND id<>?",role,display,id)==0,"Ce nom existe déjà pour ce rôle ; utilisez le nom complet");
             if (id == 0) { insert(c, "INSERT INTO app_user(display_name,username,role,active,password_hash) VALUES (?,?,?,?,?)", display, username, role, active ? 1 : 0, hash); }
             else {
                 execute(c, "UPDATE app_user SET display_name=?,username=?,role=?,active=? WHERE id=?", display, username, role, active ? 1 : 0, id);
@@ -183,6 +206,10 @@ public final class HotelStore {
             }
             return null;
         });
+    }
+    public void saveUser(long id,String name,String role,boolean active,char[] password) throws SQLException {
+        String internal=id==0?"staff."+java.util.UUID.randomUUID().toString().substring(0,12):db.read(c -> { require(c,true); return one(c,"SELECT username FROM app_user WHERE id=?",id).text("username"); });
+        saveUserAccount(id,name,internal,role,active,password);
     }
 
     private record GuestPlan(long id, boolean bed, boolean child) { }
@@ -200,6 +227,7 @@ public final class HotelStore {
         List<GuestPlan> guests = new ArrayList<>();
         for (long guestId : draft.guests()) {
             Row person = one(c, "SELECT * FROM person WHERE id=?", guestId);
+            check(under(person.date("birth_date"),18,draft.arrival()) || person.has("identity_number"),"Complétez le document d'identité de " + person.text("first_name"));
             check(!person.date("birth_date").isAfter(draft.arrival()), "Naissance postérieure à l'arrivée");
             check(scalar(c, """
                     SELECT count(*) FROM reservation_guest g JOIN reservation_room r ON r.id=g.reservation_room_id
@@ -212,6 +240,7 @@ public final class HotelStore {
         check(guests.size() - beds <= room.number("max_sharing_children"), "Limite d'enfants sans lit dépassée");
         List<MealPlan> meals = new ArrayList<>();
         for (String meal : draft.meals()) {
+            check(mealEnabled(hotel,meal),"Ce repas n'est pas proposé par l'établissement");
             Row rate = one(c, "SELECT * FROM room_model_meal WHERE model_id=? AND meal=?", room.number("model_id"), meal);
             meals.add(new MealPlan(meal, rate.number("adult_price"), rate.has("child_fixed_price") ? rate.number("child_fixed_price") : discounted(rate.number("adult_price"), (int) rate.number("child_discount_percent"))));
         }
@@ -222,6 +251,7 @@ public final class HotelStore {
     private List<Plan> plans(Connection c, long holder, List<StayDraft> drafts, long excluding) throws SQLException {
         check(!drafts.isEmpty(), "Ajoutez au moins une chambre");
         Row person = one(c, "SELECT * FROM person WHERE id=?", holder);
+        check(person.has("identity_number"),"Complétez le document d'identité du titulaire");
         check(!under(person.date("birth_date"), person.text("sex").equals("MALE") ? 19 : 21, today()), "Le titulaire doit avoir 19 ans (homme) ou 21 ans (femme)");
         List<Plan> result = new ArrayList<>();
         for (StayDraft draft : drafts) { result.add(plan(c, draft, excluding)); }
@@ -384,7 +414,42 @@ public final class HotelStore {
             return result;
         });
     }
-    public void loadDemo() throws SQLException {
-        db.tx(c -> { User actor = require(c, true); check(scalar(c, "SELECT count(*) FROM room") == 0 && scalar(c, "SELECT count(*) FROM reservation") == 0 && scalar(c, "SELECT count(*) FROM person") == 0 && scalar(c, "SELECT count(*) FROM cash_session") == 0 && scalar(c, "SELECT count(*) FROM room_model") == 0, "L'exemple nécessite une base vide (modèles, chambres, clients et caisse)"); DemoData.create(c, actor.id(), today(), now()); return null; });
+    public record BusinessStats(Row totals,List<Row> daily,List<Row> roomPerformance,List<Row> balances) { }
+    public BusinessStats statistics(LocalDate from,LocalDate through) throws SQLException {
+        check(from!=null && through!=null && !through.isBefore(from) && ChronoUnit.DAYS.between(from,through)<366,"Choisissez une période de 1 à 366 jours");
+        LocalDate until=through.plusDays(1);
+        return db.read(c -> {
+            require(c,true);
+            String period="""
+                    WITH period AS (
+                    SELECT s.room_id,s.nightly_price,t.daily_meal_total,
+                    CAST(min(julianday(s.departure),julianday(?))-max(julianday(s.arrival),julianday(?)) AS INTEGER) AS nights
+                    FROM reservation_room s JOIN room_totals t ON t.reservation_room_id=s.id
+                    WHERE s.status<>'CANCELLED' AND s.arrival<? AND s.departure>?)
+                    """;
+            Row booked=one(c,period+"SELECT coalesce(sum(nights),0) AS room_nights,coalesce(sum(nights*nightly_price),0) AS lodging_sales,coalesce(sum(nights*daily_meal_total),0) AS meal_sales FROM period",until.toString(),from.toString(),until.toString(),from.toString());
+            long inventory=scalar(c,"SELECT count(*) FROM room r WHERE r.active=1 OR EXISTS (SELECT 1 FROM reservation_room s WHERE s.room_id=r.id AND s.status<>'CANCELLED' AND s.arrival<? AND s.departure>?)",until.toString(),from.toString());
+            String begin=UTC.format(from.atStartOfDay(clock.getZone()).toInstant()),end=UTC.format(until.atStartOfDay(clock.getZone()).toInstant());
+            List<Row> entries=rows(c,"SELECT kind,amount,recorded_at FROM cash_entry WHERE recorded_at>=? AND recorded_at<? ORDER BY recorded_at",begin,end);
+            java.util.Map<LocalDate,long[]> buckets=new java.util.LinkedHashMap<>();
+            for(LocalDate date=from;date.isBefore(until);date=date.plusDays(1)){buckets.put(date,new long[3]);}
+            long paid=0,refunded=0,expenses=0;
+            for(Row entry:entries){
+                long amount=entry.number("amount"); int kind=entry.text("kind").equals("PAYMENT")?0:entry.text("kind").equals("REFUND")?1:2;
+                LocalDate date=java.time.Instant.parse(entry.text("recorded_at")).atZone(clock.getZone()).toLocalDate();
+                buckets.get(date)[kind]=Math.addExact(buckets.get(date)[kind],amount);
+                if(kind==0){paid=Math.addExact(paid,amount);}else if(kind==1){refunded=Math.addExact(refunded,amount);}else{expenses=Math.addExact(expenses,amount);}
+            }
+            List<Row> daily=new ArrayList<>(); buckets.forEach((date,amounts) -> daily.add(new Row(java.util.Map.of("day",date.toString(),"receipts",amounts[0]-amounts[1],"expenses",amounts[2]))));
+            var totals=new java.util.LinkedHashMap<>(booked.values()); long capacity=inventory*ChronoUnit.DAYS.between(from,until);
+            totals.put("inventory",inventory);totals.put("occupancy_bp",average(booked.number("room_nights")*10000,capacity));
+            totals.put("adr",average(booked.number("lodging_sales"),booked.number("room_nights")));totals.put("revpar",average(booked.number("lodging_sales"),capacity));
+            totals.put("sales",Math.addExact(booked.number("lodging_sales"),booked.number("meal_sales")));totals.put("payments",paid);totals.put("refunds",refunded);totals.put("net_receipts",paid-refunded);totals.put("expenses",expenses);totals.put("cash_flow",paid-refunded-expenses);
+            totals.put("open_balance",scalar(c,"SELECT coalesce(sum(balance),0) FROM reservation_balances WHERE balance>0"));
+            List<Row> rooms=rows(c,period+"SELECT r.number,m.name AS model,sum(p.nights) AS nights,sum(p.nights*p.nightly_price) AS lodging_sales FROM period p JOIN room r ON r.id=p.room_id JOIN room_model m ON m.id=r.model_id GROUP BY r.id ORDER BY lodging_sales DESC,r.number",until.toString(),from.toString(),until.toString(),from.toString());
+            List<Row> balances=rows(c,"SELECT b.id,p.first_name||' '||p.last_name AS label,p.phone,v.balance FROM reservation b JOIN person p ON p.id=b.holder_id JOIN reservation_balances v ON v.reservation_id=b.id WHERE v.balance>0 ORDER BY v.balance DESC,b.id LIMIT 10");
+            return new BusinessStats(new Row(totals),List.copyOf(daily),rooms,balances);
+        });
     }
+    private static long average(long amount,long divisor){return divisor==0?0:BigDecimal.valueOf(amount).divide(BigDecimal.valueOf(divisor),0,RoundingMode.HALF_UP).longValueExact();}
 }

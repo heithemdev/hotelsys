@@ -12,4 +12,6 @@ Un outil de réception : calme, précis, accueillant. Le calendrier des séjours
 
 La maquette `calendar-reference.png` et le logo dans `src/main/resources/images/logo.png` ont été générés avec l'outil imagegen intégré. Les écrans JavaFX reprennent la composition de la maquette ; les informations restent de vrais contrôles et données.
 
+La révision métier utilise `setup-business-reference.png` : configuration sur deux panneaux, classement à étoiles, services de restauration et compte administrateur. `setup-business.png`, `login-business.png` et `dashboard.png` sont des captures de l'application. Le prompt intégré est conservé dans `setup-business-prompt.txt`. Les options de démonstration et textes techniques ont été supprimés des parcours utilisateur.
+
 Unslop par Damir Sokolovsky (@heydamir), CC BY 4.0, est installé localement dans `.agents/skills/unslop`. Ponytail était déjà installé pour cet environnement. Les nouvelles installations de skills seront détectées au prochain tour ; leurs instructions ont aussi été lues pour ce travail.

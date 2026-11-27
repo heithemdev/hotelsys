@@ -33,7 +33,46 @@ public final class UI {
         Button button = new Button(text); button.getStyleClass().add(style);
         button.setOnAction(event -> { try { action.run(); } catch (RuntimeException failure) { alert(failure.getMessage()); } }); return button;
     }
-    public static TextField input(String value, String prompt) { TextField input = new TextField(value); input.setPromptText(prompt); input.setMaxWidth(Double.MAX_VALUE); return input; }
+    public static TextField input(String value, String prompt) { return input(value,prompt,150); }
+    public static TextField input(String value,String prompt,int max) {
+        TextField input=new TextField(value);input.setPromptText(prompt);input.setMaxWidth(Double.MAX_VALUE);
+        filter(input,max,"[\\s\\S]*",false);return input;
+    }
+    public static void filter(TextField field,int max,String pattern,boolean uppercase) {
+        field.setTextFormatter(new TextFormatter<String>(change -> {
+            if(uppercase && change.isContentChange()){change.setText(change.getText().toUpperCase(Locale.ROOT));}
+            String next=change.getControlNewText();return next.length()<=max && next.matches(pattern)?change:null;
+        }));
+    }
+    public static TextField moneyInput(String value,String prompt){TextField field=input(value,prompt);filter(field,12,"[0-9]{0,9}([,.][0-9]{0,2})?",false);return field;}
+    public static TextField countInput(String value,int min,int max){
+        TextField field=input(value,"");countFilter(field,min,max);return field;
+    }
+    public static void countFilter(TextField field,int min,int max){field.setTextFormatter(new TextFormatter<String>(change -> {
+            String next=change.getControlNewText();if(next.isEmpty()){return change;}
+            if(!next.matches("[0-9]{1,3}")){return null;}int number=Integer.parseInt(next);return number>=min && number<=max?change:null;
+        }));
+    }
+    public static DatePicker datePicker(LocalDate date){
+        DatePicker picker=new DatePicker(date);DateTimeFormatter format=DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(java.time.format.ResolverStyle.STRICT);
+        picker.setConverter(new StringConverter<>(){
+            @Override public String toString(LocalDate value){return value==null?"":value.format(format);}
+            @Override public LocalDate fromString(String text){if(text==null||text.isBlank()){return null;}try{return LocalDate.parse(text,format);}catch(java.time.format.DateTimeParseException invalid){return null;}}
+        });filter(picker.getEditor(),10,"[0-9/]*",false);picker.setPromptText("jj/mm/aaaa");return picker;
+    }
+    public static ComboBox<Integer> category(int selected){
+        ComboBox<Integer> combo=new ComboBox<>();for(int stars=0;stars<=5;stars++){combo.getItems().add(stars);}combo.setValue(selected);combo.setMaxWidth(Double.MAX_VALUE);
+        java.util.function.Supplier<ListCell<Integer>> cells=() -> new ListCell<>(){
+            @Override protected void updateItem(Integer value,boolean empty){super.updateItem(value,empty);setText(null);setGraphic(null);if(empty||value==null){return;}
+                HBox line=row(12,label(HotelStore.category(value),"strong"));for(int i=0;i<value;i++){javafx.scene.shape.SVGPath star=new javafx.scene.shape.SVGPath();star.setContent("M8 0L10.5 5L16 6L12 10L13 16L8 13L3 16L4 10L0 6L5.5 5Z");star.setFill(javafx.scene.paint.Color.web("#A87929"));line.getChildren().add(star);}setGraphic(line);
+            }
+        };combo.setCellFactory(ignore -> cells.get());combo.setButtonCell(cells.get());return combo;
+    }
+    public static ToggleButton toggle(boolean selected){
+        ToggleButton button=new ToggleButton();button.setSelected(selected);button.getStyleClass().add("switch");button.setAccessibleText("Activé");
+        StackPane track=new StackPane();track.getStyleClass().add("switch-track");javafx.scene.shape.Circle knob=new javafx.scene.shape.Circle(9,javafx.scene.paint.Color.WHITE);knob.translateXProperty().bind(javafx.beans.binding.Bindings.when(button.selectedProperty()).then(10).otherwise(-10));track.getChildren().add(knob);button.setGraphic(track);return button;
+    }
+    public static Node serviceRow(String text,ToggleButton toggle){return row(12,label(text,"field-label"),spacer(),toggle);}
     public static VBox field(String name, Node control) { Label label = label(name, "field-label"); if (control instanceof Control c) { label.setLabelFor(c); c.setMaxWidth(Double.MAX_VALUE); c.setAccessibleText(name); } return box(6, label, control); }
     public static HBox columns(Node... nodes) {
         HBox row = row(16, nodes); for (Node node : nodes) { HBox.setHgrow(node, Priority.ALWAYS); if (node instanceof Region r) { r.setMaxWidth(Double.MAX_VALUE); r.setPrefWidth(1); } } return row;

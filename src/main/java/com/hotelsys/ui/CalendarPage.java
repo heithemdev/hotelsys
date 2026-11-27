@@ -21,7 +21,7 @@ public final class CalendarPage {
     public CalendarPage(HotelApp app) { this.app = app; start = app.store().today().with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)); }
     private record Data(List<Row> rooms, List<Row> stays, List<Row> todayStays) { }
     public Node view() {
-        VBox page = UI.page("Planning des séjours", "Une vue claire de chaque chambre", UI.button("+ Nouvelle réservation", "primary", () -> BookingEditor.create(app, 0, app.store().today()))); page.setId("page-calendar");
+        VBox page = UI.page("Planning des séjours", "Disponibilité par chambre", UI.button("+ Nouvelle réservation", "primary", () -> BookingEditor.create(app, 0, app.store().today()))); page.setId("page-calendar");
         Button previous = UI.button("‹", "secondary", () -> { start = start.minusWeeks(1); load(); }); previous.setAccessibleText("Semaine précédente");
         Button next = UI.button("›", "secondary", () -> { start = start.plusWeeks(1); load(); }); next.setAccessibleText("Semaine suivante");
         jump.setPrefWidth(180); jump.setEditable(false);

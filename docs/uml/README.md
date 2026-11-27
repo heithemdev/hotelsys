@@ -2,7 +2,7 @@
 
 Ouvrir [HotelSys.mdj](HotelSys.mdj) dans StarUML. Le projet contient un diagramme de classes du domaine et un diagramme de cas d'utilisation avec réceptionniste et administrateur. Les attributs des classes sont issus du schéma SQL ; ce sont les concepts du domaine, pas une obligation de créer une classe Java par table.
 
-Le modèle relationnel détaillé, les cardinalités et les contraintes se trouvent dans [database.md](../database.md). Le [script SQL](../../src/main/resources/db/migrations/001_initial.sql) reste la référence pour les évolutions.
+Le modèle relationnel détaillé, les cardinalités et les contraintes se trouvent dans [database.md](../database.md). Le [schéma initial](../../src/main/resources/db/migrations/001_initial.sql) et sa [migration métier](../../src/main/resources/db/migrations/002_business.sql) restent la référence pour les évolutions.
 
 ```mermaid
 classDiagram

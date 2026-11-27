@@ -21,7 +21,7 @@ Le projet utilise un seul module Maven. `HotelApp` gère le démarrage, la navig
 | `Db` | Connexions, paramètres SQLite, migration et transactions |
 | `HotelStore` | Authentification, catalogue, personnes, réservations, admission, caisse et statistiques |
 | `Passwords` | PBKDF2, sel aléatoire et vérification des empreintes |
-| `DemoData` | Exemple synthétique facultatif sur une base vide |
+| `PaymentSound` | Confirmation sonore facultative après validation du paiement |
 | Pages de `ui` | Formulaires et affichage ; aucune requête SQL |
 | `UI`, `Icons` | Contrôles partagés, formatage, dialogues et tracés homogènes |
 
@@ -41,7 +41,7 @@ Les montants sont des `long` en centimes. `Math.addExact` et `Math.multiplyExact
 - Chaque connexion active les clés étrangères et attend au maximum cinq secondes en cas d'écriture concurrente.
 - Transactions `IMMEDIATE` : disponibilité et écriture sont sérialisées. Une erreur annule toute l'opération.
 - Le script initial est exécuté entier, sans découpage sur `;`, car il contient des triggers.
-- `user_version` passe à 1 seulement après réussite. Une base plus récente est refusée ; un redémarrage conserve les données.
+- `user_version` passe à 2 après application transactionnelle des migrations. Une sauvegarde SQLite cohérente est créée avant la mise à niveau d'une ancienne base. Une base plus récente est refusée ; un redémarrage conserve les données.
 - Les autorisations relisent le rôle et l'état actif de l'utilisateur dans la base. Les menus administrateur ne sont qu'une aide d'affichage.
 - Mots de passe : PBKDF2-HMAC-SHA256, 600 000 itérations, sel aléatoire de 16 octets, empreinte de 32 octets, format versionné et comparaison constante.
 - Dates en `LocalDate`, calcul métier en `Africa/Algiers`, événements UTC à précision fixe de trois décimales.
@@ -54,7 +54,11 @@ Le fichier dépend des permissions du compte Windows ; l'application ne le chiff
 
 Le thème et les polices sont embarqués ; aucune modification des polices système n'est nécessaire. La porte arquée est la signature de l'application. Les transitions utilisent une seule courbe, un fondu et un déplacement de 8 px ; elles peuvent être réduites depuis les paramètres.
 
-Six scénarios JUnit vérifient les règles essentielles sur des bases temporaires. `UiCheck`, facultatif, ouvre l'application sur un exemple isolé, parcourt les pages, crée une réservation et vérifie la reconnexion. Les captures sont des rendus de vrais contrôles JavaFX.
+Neuf scénarios JUnit vérifient les règles essentielles, les indicateurs et la migration sur des bases temporaires. `UiCheck`, facultatif, utilise une fixture réservée aux tests, parcourt les pages, crée un client avec son document puis une réservation et vérifie la connexion par rôle/nom. Les captures sont des rendus de vrais contrôles JavaFX. Les exemples ne sont pas livrés dans le code applicatif.
+
+Les comptes utilisent un identifiant interne stable, jamais demandé à l'utilisateur. La connexion vérifie ensemble l'identifiant du compte choisi, le rôle sélectionné, l'état actif et le mot de passe. Changer le rôle dans l'interface n'accorde aucun droit.
+
+Les filtres JavaFX restreignent la saisie ; HotelStore valide de nouveau les valeurs avant écriture. Les numéros de document sont textuels et uniques par type, pour préserver les zéros initiaux. Les colonnes d'identité d'anciens clients restent vides après migration, sans inventer de document.
 
 ## Références
 

@@ -25,6 +25,8 @@ HotelSys concerne un hôtel, un poste de réception et une caisse physique. Les 
 
 Le premier compte est administrateur. Les comptes utilisés sont désactivés plutôt qu'effacés ; le dernier administrateur actif reste protégé.
 
+La création du premier administrateur termine la configuration initiale. Les ouvertures suivantes affichent une connexion par rôle, nom et mot de passe, sans identifiant technique à saisir.
+
 ## Chambres et modèles
 
 - Un modèle définit un nom, un nombre de lits, une limite d'enfants partageant sans lit et une description des équipements : télévision, balcon, jacuzzi, etc.
@@ -36,6 +38,7 @@ Le premier compte est administrateur. Les comptes utilisés sont désactivés pl
 ## Personnes, âges et admission
 
 - Une personne possède un nom, un prénom, une naissance et un sexe pour les règles d'admission demandées. Téléphone et e-mail sont facultatifs.
+- Un client adulte doit également présenter un document d'identité : carte d'identité, passeport ou titre de séjour. Son numéro est stocké comme texte, avec ses zéros initiaux ; le document reste facultatif pour un mineur.
 - Le titulaire doit avoir **19 ans pour un homme, 21 ans pour une femme**, à la date de réservation. Il peut réserver pour des accompagnants plus jeunes et ne doit pas nécessairement occuper chaque chambre.
 - Ces seuils constituent une politique de projet demandée par le commanditaire, sans qualification juridique.
 - **Enfant sans lit : moins de 6 ans par défaut**, seuil modifiable par l'administrateur. À son sixième anniversaire, l'enfant nécessite un lit.
@@ -63,6 +66,8 @@ Le premier compte est administrateur. Les comptes utilisés sont désactivés pl
 L'hébergement est facturé **par chambre et par nuit**, indépendamment des lits vides et sans remise enfant. Un enfant sans lit ne crée aucun supplément d'hébergement.
 
 L'administrateur définit, dans chaque modèle, les tarifs du petit-déjeuner, déjeuner et dîner. Chaque repas possède un prix adulte et **soit** un prix enfant fixe, **soit** un pourcentage de réduction. Un repas sans tarif configuré ne peut pas être choisi.
+
+L'hôtel active séparément les services de restauration. Un service désactivé n'apparaît plus sur les nouveaux devis, même si un modèle conserve son ancien tarif. Le classement de l'établissement est choisi dans une liste allant de non classé à cinq étoiles.
 
 Les repas sont sélectionnés pour une chambre réservée entière. Ils sont facturés par personne, y compris les enfants sans lit, selon leur tarif applicable, une fois par nuit réservée.
 

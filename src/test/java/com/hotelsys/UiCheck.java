@@ -33,12 +33,24 @@ public final class UiCheck {
             fx(() -> { app = new HotelApp(); app.start(new Stage()); return null; });
             await(() -> find("#loginSubmit") != null);
             fx(() -> {
-                text("#setupHotel", "Hôtel El Bahia"); text("#setupName", "Heithem"); text("#loginUsername", "demo.admin");
-                text("#loginPassword", "Reception-demo-2026"); text("#setupConfirmation", "Reception-demo-2026"); ((CheckBox) find("#setupDemo")).setSelected(true); button("#loginSubmit").fire(); return null;
+                text("#setupHotel", "Hôtel Atlas"); text("#setupName", "Nadia Benali");
+                @SuppressWarnings("unchecked") ComboBox<Integer> category=(ComboBox<Integer>)find("#setupCategory");category.setValue(4);
+                ((ToggleButton)find("#setupDinner")).setSelected(true);return null;
             });
+            snapshot(app.stage(),"setup-business.png");
+            fx(() -> {text("#loginPassword", "Reception-demo-2026");text("#setupConfirmation", "Reception-demo-2026");button("#loginSubmit").fire();return null;});
             await(() -> find("#page-dashboard") != null && find(".chart") != null);
+            com.hotelsys.service.DemoData.seed(app.store());fx(() -> {app.refresh();return null;});await(() -> find(".chart")!=null);
             Thread.sleep(350); snapshot(app.stage(), "dashboard.png");
-            fx(() -> { app.navigate("calendar"); return null; }); await(() -> find(".stay-bar") != null); Thread.sleep(300); snapshot(app.stage(), "calendar.png");
+            fx(() -> {com.hotelsys.ui.PeoplePage.edit(app,null,app::refresh);return null;});await(() -> find("#guestDocument")!=null);
+            fx(() -> {
+                text("#guestFirst","Youssef");text("#guestLast","Karim");((DatePicker)find("#guestBirth")).setValue(java.time.LocalDate.of(1990,1,1));
+                TextField document=(TextField)find("#guestDocument");document.setText("ABC");HotelStoreAssert.equal(0,document.getLength());document.setText("00012345");
+                for(Window window:Window.getWindows()){if(window.getScene()!=null){for(Node node:window.getScene().getRoot().lookupAll(".button")){if(node instanceof Button b && b.getText().equals("Enregistrer le client")){b.fire();return null;}}}}
+                throw new AssertionError("Bouton client absent");
+            });await(() -> find("#guestDocument")==null);
+            if(!app.store().guests().stream().anyMatch(r -> r.text("identity_number").equals("00012345"))){throw new AssertionError("Identité non conservée");}
+            fx(() -> { app.navigate("calendar"); return null; }); await(() -> find(".stay-bar") != null);
             fx(() -> { BookingEditor.create(app, 0, app.store().today().plusDays(10)); return null; }); await(() -> find("#bookingHolder") != null);
             fx(() -> {
                 combo("#bookingHolder").getSelectionModel().selectFirst(); combo("#bookingRoom").getSelectionModel().selectFirst();
@@ -47,17 +59,18 @@ public final class UiCheck {
             });
             await(() -> !button("#saveBooking").isDisabled());
             fx(() -> { HotelStoreAssert.equal(7, app.store().bookings().size() + 1); return null; });
-            Stage dialog = fx(() -> (Stage) find("#saveBooking").getScene().getWindow()); snapshot(dialog,"booking.png");
             fx(() -> { button("#saveBooking").fire(); return null; }); await(() -> find("#saveBooking") == null);
             fx(() -> { HotelStoreAssert.equal(7,app.store().bookings().size()); return null; });
             for (String page : List.of("people","rooms","cash","team","settings","reservations")) {
                 fx(() -> { app.navigate(page); return null; }); await(() -> find("#page-" + page) != null); Thread.sleep(150); fx(() -> { app.stage().getScene().getRoot().applyCss(); app.stage().getScene().getRoot().layout(); return null; });
             }
             fx(() -> { app.store().logout(); app.showLogin(false); return null; }); await(() -> find("#loginSubmit") != null);
-            fx(() -> { text("#loginUsername","demo.admin"); text("#loginPassword","incorrect"); button("#loginSubmit").fire(); return null; });
+            await(() -> !button("#loginSubmit").isDisabled());snapshot(app.stage(),"login-business.png");
+            fx(() -> { text("#loginPassword","incorrect"); button("#loginSubmit").fire(); return null; });
             await(() -> !button("#loginSubmit").isDisabled());
             fx(() -> { text("#loginPassword","Reception-demo-2026"); button("#loginSubmit").fire(); return null; }); await(() -> find("#page-reservations") != null);
             if (!errors.isEmpty()) { throw new AssertionError("Erreur sur le thread graphique",errors.getFirst()); }
+            fx(() -> {TextField money=com.hotelsys.ui.UI.moneyInput("","");money.setText("abc");HotelStoreAssert.equal(0,money.getLength());money.setText("12.34");money.appendText("5");HotelStoreAssert.equal(5,money.getLength());TextField count=com.hotelsys.ui.UI.countInput("2",1,100);count.setText("101");HotelStoreAssert.equal(2,Long.parseLong(count.getText()));return null;});
             System.out.println("UI CHECK OK: setup, eight pages, quote, persisted booking, logout/login; 3 screenshots in target/ui-check.");
         } finally {
             fx(() -> { if (app != null) { app.stop(); } for (Window window : List.copyOf(Window.getWindows())) { window.hide(); } return null; }); Platform.exit();

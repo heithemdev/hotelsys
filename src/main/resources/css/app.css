@@ -81,3 +81,15 @@
 .login-brand { -fx-font-size: 26px; -fx-text-fill: #F6F5F1; }
 .login-headline { -fx-font-family: "DM Serif Display"; -fx-font-size: 48px; -fx-text-fill: #F6F5F1; }
 .login-description { -fx-text-fill: #D8D1D8; -fx-font-size: 15px; -fx-line-spacing: 4; }
+.access-header { -fx-background-color: white; -fx-padding: 16 32; -fx-border-color: transparent transparent #E4DFE1 transparent; }
+.role-choice { -fx-background-color: #F4F1EE; -fx-text-fill: #665E68; -fx-border-color: #E4DFE1; -fx-min-height: 40; -fx-background-radius: 8; -fx-border-radius: 8; -fx-padding: 10 16; -fx-font-family: "Manrope"; }
+.role-choice:selected { -fx-background-color: #F0E3DC; -fx-text-fill: #8F4029; -fx-border-color: #A94F32; }
+.switch { -fx-background-color: transparent; -fx-padding: 4; -fx-border-color: transparent; }
+.switch-track { -fx-background-color: #C8C1C6; -fx-background-radius: 14; -fx-min-width: 44; -fx-max-width: 44; -fx-min-height: 24; -fx-max-height: 24; }
+.switch:selected .switch-track { -fx-background-color: #A94F32; }
+.switch:focused { -fx-border-color: #A94F32; -fx-border-radius: 8; }
+.default-color0.chart-series-line { -fx-stroke: #A94F32; -fx-stroke-width: 2; }
+.default-color1.chart-series-line { -fx-stroke: #7B8182; -fx-stroke-width: 2; }
+.default-color0.chart-line-symbol { -fx-background-color: #A94F32,white; -fx-padding: 4; }
+.default-color1.chart-line-symbol { -fx-background-color: #7B8182,white; -fx-padding: 4; }
+.chart-legend { -fx-background-color: transparent; -fx-font-size: 12px; }

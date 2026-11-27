@@ -2,7 +2,7 @@
 
 ## Vue d'ensemble
 
-Le schéma comprend **12 tables métier et 3 vues calculées**. Sa source unique est [001_initial.sql](../src/main/resources/db/migrations/001_initial.sql). Les données se répartissent en catalogue, personnes/comptes, réservations et caisse.
+Le schéma comprend **12 tables métier et 3 vues calculées**. La version 2 applique [001_initial.sql](../src/main/resources/db/migrations/001_initial.sql), puis [002_business.sql](../src/main/resources/db/migrations/002_business.sql). Les données se répartissent en catalogue, personnes/comptes, réservations et caisse.
 
 ```mermaid
 erDiagram
@@ -52,6 +52,8 @@ Les noms ne sont pas uniques : deux personnes peuvent partager nom et naissance.
 | `category` | TEXT, 1–80 caractères | Catégorie de l'énoncé |
 | `bed_sharing_age` | INTEGER, 0–18, défaut 6 | Les personnes strictement plus jeunes peuvent partager sans lit |
 | `meal_child_age` | INTEGER, 0–18, défaut 12 | Seuil strict du tarif enfant des repas |
+| `breakfast_enabled`, `lunch_enabled`, `dinner_enabled` | 0/1 | Services proposés sur les nouveaux devis |
+| `payment_sound` | 0/1 | Confirmation sonore des paiements |
 
 La migration crée uniquement cette configuration initiale, à personnaliser plus tard. Elle ne crée aucun compte ni client.
 
@@ -100,6 +102,8 @@ Le modèle ne contient pas de prix d'hébergement dupliqué : le prix courant ap
 | `birth_date` | Date ISO valide | Sert aux règles d'âge |
 | `sex` | `MALE` / `FEMALE` | Politique d'admission demandée |
 | `phone`, `email` | TEXT, facultatifs | Contact, limites 40/200 caractères |
+| `identity_type` | `NATIONAL_ID`, `PASSPORT`, `RESIDENCE_PERMIT` | Type de document |
+| `identity_number` | TEXT, nullable pour migration/mineurs, 3–20 caractères | Numéro, zéros initiaux conservés ; unique par type |
 
 Aucune colonne `age`, `is_adult` ou table séparée adulte/enfant : ces catégories dépendent de la date et de la règle appliquée. L'éligibilité du titulaire (19/21), le besoin d'un lit (6) et le tarif enfant des repas (12) sont trois notions distinctes.
 
@@ -267,4 +271,4 @@ Les références historiques utilisent `ON DELETE RESTRICT`. La suppression d'un
 
 Une chambre inutilisée peut être supprimée ; sinon elle est désactivée. Une réservation est annulée, jamais effacée par le flux métier. Les comptes référencés sont désactivés. Les écritures et sessions de caisse restent conservées.
 
-La migration ne fixe pas elle-même `user_version` : Db et les tests doivent le faire après réussite transactionnelle. Les évolutions utiliseront des migrations numérotées supplémentaires, sans modifier une migration déjà appliquée à de vraies données.
+Les scripts ne fixent pas eux-mêmes `user_version` : Db le fait après réussite transactionnelle de chaque migration, actuellement version 2. Une sauvegarde via `VACUUM INTO` précède la mise à niveau des anciennes bases. La migration conserve tous les clients et comptes ; elle ne fabrique aucun numéro de document. Les évolutions utiliseront des migrations numérotées supplémentaires, sans modifier une migration déjà appliquée à de vraies données.

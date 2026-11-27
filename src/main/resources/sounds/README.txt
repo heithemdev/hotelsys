@@ -1,0 +1,1 @@
+Original HotelSys payment cue. Synthesized PCM WAV, 44.1 kHz mono, 0.55 s. Created for this project; no third-party recording. Plays after a successful payment only, and can be muted in hotel settings.

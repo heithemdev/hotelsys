@@ -33,7 +33,7 @@ public final class BookingEditor {
     }
     private static Data load(HotelApp app) throws java.sql.SQLException {
         List<Row> rooms = app.store().rooms().stream().filter(r -> r.flag("active")).toList(); Map<Long, Set<String>> rates = new HashMap<>();
-        for (Row room : rooms) { long model = room.number("model_id"); if (!rates.containsKey(model)) { rates.put(model, new HashSet<>(app.store().mealRates(model).stream().map(r -> r.text("meal")).toList())); } }
+        for (Row room : rooms) { long model = room.number("model_id"); if (!rates.containsKey(model)) { rates.put(model, new HashSet<>(app.store().offeredMealRates(model).stream().map(r -> r.text("meal")).toList())); } }
         return new Data(app.store().guests(), rooms, rates);
     }
     private BookingEditor(HotelApp app, Data data, long editing, long holderId, long room, LocalDate arrival, LocalDate departure, List<Long> occupants, Set<String> meals) {
@@ -86,7 +86,7 @@ public final class BookingEditor {
         private final Label capacity = UI.muted("Choisissez une chambre"), price = UI.label("", "strong");
         private final VBox view;
         StayFields(long roomId, LocalDate from, LocalDate to, List<Long> guests, Set<String> selectedMeals) {
-            arrival = new DatePicker(from); departure = new DatePicker(to); people.setMaxWidth(Double.MAX_VALUE);
+            arrival = UI.datePicker(from); departure = UI.datePicker(to); people.setMaxWidth(Double.MAX_VALUE);
             room.setId("bookingRoom"); arrival.setId("stayArrival"); departure.setId("stayDeparture"); people.setId("bookingGuests");
             fillGuests(currentGuests); for (long id : guests) { if (occupants.containsKey(id)) { occupants.get(id).setSelected(true); } }
             HBox mealRow = UI.row(12);
@@ -110,7 +110,7 @@ public final class BookingEditor {
         void updatePeople() { long count = occupants.values().stream().filter(CheckBox::isSelected).count(); people.setText(count == 0 ? "Choisir les occupants" : count + " occupant(s) sélectionné(s)"); }
         void updateRoom() {
             Row selected = room.getValue(); capacity.setText(selected == null ? "Choisissez une chambre" : selected.number("bed_count") + " lits · " + selected.number("max_sharing_children") + " enfant(s) sans lit maximum · " + UI.money(selected.number("nightly_price")) + " / nuit");
-            mealControls.forEach((meal, checkbox) -> { boolean available = selected != null && data.meals().getOrDefault(selected.number("model_id"), Set.of()).contains(meal); checkbox.setDisable(!available); if (!available) { checkbox.setSelected(false); } });
+            mealControls.forEach((meal, checkbox) -> { boolean available = selected != null && data.meals().getOrDefault(selected.number("model_id"), Set.of()).contains(meal); checkbox.setDisable(!available);checkbox.setVisible(available);checkbox.setManaged(available); if (!available) { checkbox.setSelected(false); } });
         }
         StayDraft draft() { return new StayDraft(UI.id(room), arrival.getValue(), departure.getValue(), occupants.entrySet().stream().filter(e -> e.getValue().isSelected()).map(Map.Entry::getKey).toList(), new HashSet<>(mealControls.entrySet().stream().filter(e -> e.getValue().isSelected()).map(Map.Entry::getKey).toList())); }
     }

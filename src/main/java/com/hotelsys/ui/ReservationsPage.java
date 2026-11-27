@@ -14,7 +14,7 @@ public final class ReservationsPage {
     private final HotelApp app;
     public ReservationsPage(HotelApp app) { this.app = app; }
     public Node view() {
-        VBox page = UI.page("Les réservations", "Du premier devis au dernier départ", UI.button("+ Nouvelle réservation", "primary", () -> BookingEditor.create(app, 0, app.store().today()))); page.setId("page-reservations");
+        VBox page = UI.page("Réservations", "Séjours et soldes clients", UI.button("+ Nouvelle réservation", "primary", () -> BookingEditor.create(app, 0, app.store().today()))); page.setId("page-reservations");
         TableView<Row> table = UI.table(); table.setId("bookingsTable"); TextField search = UI.input("", "Rechercher un client ou une référence"); search.setMaxWidth(320);
         ComboBox<String> status = new ComboBox<>(FXCollections.observableArrayList("Tous les séjours", "Réservé", "En séjour", "Terminé", "Annulé")); status.getSelectionModel().selectFirst();
         UI.column(table, "Référence", 100, r -> reference(r.number("id"))); UI.column(table, "Titulaire", 200, r -> r.text("label"));

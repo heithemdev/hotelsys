@@ -37,6 +37,7 @@ public final class HotelApp extends Application {
     private String current = "dashboard";
     private Label hotelLabel;
     private boolean reduceMotion;
+    private boolean paymentSound=true;
 
     public HotelStore store() { return store; }
     public Stage stage() { return stage; }
@@ -72,7 +73,8 @@ public final class HotelApp extends Application {
         Button logout = UI.button("Déconnexion", "nav", () -> { store.logout(); showLogin(false); }); logout.setGraphic(icon("logout")); sidebar.getChildren().add(logout);
         BorderPane shell = new BorderPane(); shell.setLeft(sidebar); shell.setCenter(content); root.getChildren().setAll(shell); refreshHotelName(); navigate(current);
     }
-    public void refreshHotelName() { run(store::hotel, row -> { if (hotelLabel != null) { hotelLabel.setText(row.text("name")); } stage.setTitle("HotelSys · " + row.text("name")); }); }
+    public void refreshHotelName() { run(store::hotel, row -> { if (hotelLabel != null) { hotelLabel.setText(row.text("name")); } paymentSound=row.flag("payment_sound");stage.setTitle("HotelSys · " + row.text("name")); }); }
+    public void paymentConfirmed(){toast("Paiement enregistré");if(paymentSound){com.hotelsys.ui.PaymentSound.play();}}
     private void addNav(VBox parent, String key, String text, String icon) {
         Button button = UI.button(text, "nav", () -> navigate(key)); button.setId("nav-" + key); button.setGraphic(icon(icon)); button.setMaxWidth(Double.MAX_VALUE); nav.put(key, button); parent.getChildren().add(button);
     }

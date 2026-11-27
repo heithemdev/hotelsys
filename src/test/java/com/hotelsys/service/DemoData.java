@@ -6,8 +6,11 @@ import java.time.LocalDate;
 import static com.hotelsys.repository.Db.*;
 
 /** Exemple facultatif, inséré une seule fois dans une base vide. */
-final class DemoData {
+public final class DemoData {
     private DemoData() { }
+    public static void seed(HotelStore store) throws SQLException {
+        store.database().tx(c -> {create(c,store.user().id(),store.today(),java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(java.time.ZoneOffset.UTC).format(java.time.Instant.now()));return null;});
+    }
     static void create(Connection c, long admin, LocalDate today, String now) throws SQLException {
         String[] names = {"Classique", "Familiale", "Suite"}; int[] beds = {2, 3, 4}; long[] models = new long[3];
         for (int i = 0; i < names.length; i++) {
@@ -25,6 +28,7 @@ final class DemoData {
         long[] persons = new long[8];
         for (int i = 0; i < persons.length; i++) {
             persons[i] = insert(c, "INSERT INTO person(last_name,first_name,birth_date,sex,phone) VALUES (?,?,?,?,?)", identities[i][0], identities[i][1], today.minusYears(i == 6 ? 5 : 28 + i).minusDays(20).toString(), identities[i][2], "0550 12 34 " + (10 + i));
+            execute(c,"UPDATE person SET identity_number=? WHERE id=?",String.format(java.util.Locale.ROOT,"%08d",i+1),persons[i]);
         }
         long[] bookings = new long[6];
         int[] occupants = {0,1,2,3,4,7};

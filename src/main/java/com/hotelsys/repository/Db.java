@@ -22,19 +22,28 @@ public final class Db {
 
     public void initialize() throws IOException, SQLException {
         Files.createDirectories(file.getParent());
-        String sql;
-        try (var input = Db.class.getResourceAsStream("/db/migrations/001_initial.sql")) {
-            if (input == null) { throw new IOException("Schéma SQL introuvable"); }
-            sql = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        String[] scripts = {resource("001_initial.sql"), resource("002_business.sql")};
+        long oldVersion = read(c -> scalar(c,"PRAGMA user_version"));
+        if (oldVersion > 0 && oldVersion < scripts.length) {
+            Path backups = file.getParent().resolve("backups"); Files.createDirectories(backups);
+            String destination = backups.resolve("hotelsys-v" + oldVersion + "-" + System.currentTimeMillis() + ".db").toString();
+            read(c -> { execute(c,"VACUUM INTO ?",destination); return null; });
         }
         tx(c -> {
             long version = scalar(c, "PRAGMA user_version");
-            if (version > 1) { throw new SQLException("La base nécessite une version plus récente de HotelSys"); }
-            if (version == 0) {
-                try (var statement = c.createStatement()) { statement.executeUpdate(sql); statement.executeUpdate("PRAGMA user_version=1"); }
+            if (version > scripts.length) { throw new SQLException("La base nécessite une version plus récente de HotelSys"); }
+            for (int next = (int) version; next < scripts.length; next++) {
+                try (var statement = c.createStatement()) { statement.executeUpdate(scripts[next]); statement.executeUpdate("PRAGMA user_version=" + (next + 1)); }
             }
             return null;
         });
+    }
+
+    private static String resource(String name) throws IOException {
+        try (var input = Db.class.getResourceAsStream("/db/migrations/" + name)) {
+            if (input == null) { throw new IOException("Migration introuvable : " + name); }
+            return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 
     public Connection connect() throws SQLException {
