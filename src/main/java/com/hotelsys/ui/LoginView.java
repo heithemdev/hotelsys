@@ -19,8 +19,8 @@ public final class LoginView {
     private final boolean setup;
     public LoginView(HotelApp app,boolean setup){this.app=app;this.setup=setup;}
     public Node view(){return setup?setup():login();}
-    private Node header(String context){
-        HBox header=UI.row(12,app.logo(36),UI.label("HotelSys","brand"),UI.spacer(),UI.muted(context));header.getStyleClass().add("access-header");return header;
+    private Node header(){
+        HBox header=UI.row(12,app.logo(32),UI.label("HotelSys","brand"));header.getStyleClass().add("access-header");return header;
     }
     private PasswordField password(String id){PasswordField field=new PasswordField();field.setId(id);UI.filter(field,128,"[\\s\\S]*",false);return field;}
     private Node setup(){
@@ -29,9 +29,9 @@ public final class LoginView {
         ToggleButton breakfast=UI.toggle(true),lunch=UI.toggle(false),dinner=UI.toggle(false);breakfast.setId("setupBreakfast");lunch.setId("setupLunch");dinner.setId("setupDinner");
         PasswordField password=password("loginPassword"),confirmation=password("setupConfirmation");
         VBox establishment=UI.panel(UI.label("Établissement","section-title"),UI.field("Nom de l'hôtel",hotel),UI.field("Classement",rating),new Separator(),UI.label("Services de restauration","section-title"),UI.serviceRow("Petit-déjeuner",breakfast),UI.serviceRow("Déjeuner",lunch),UI.serviceRow("Dîner",dinner));
-        VBox account=UI.panel(UI.label("Compte administrateur","section-title"),UI.field("Nom complet",name),UI.field("Mot de passe",password),UI.muted("12 caractères minimum"),UI.field("Confirmer le mot de passe",confirmation));
+        VBox account=UI.panel(UI.label("Compte administrateur","section-title"),UI.field("Nom complet",name),UI.field("Mot de passe · 12 caractères minimum",password),UI.field("Confirmer le mot de passe",confirmation));
         establishment.setSpacing(12);account.setSpacing(12);
-        Label error=UI.label("","error");error.setWrapText(true);Button submit=new Button("Terminer la configuration");submit.setId("loginSubmit");submit.getStyleClass().add("primary");submit.setDefaultButton(true);
+        Label error=UI.label("","error");error.setWrapText(true); error.managedProperty().bind(error.textProperty().isNotEmpty()); error.visibleProperty().bind(error.managedProperty()); Button submit=new Button("Créer l’établissement");submit.setId("loginSubmit");submit.getStyleClass().add("primary");submit.setDefaultButton(true); Motion.press(submit);
         submit.setOnAction(event -> {
             error.setText("");if(!password.getText().equals(confirmation.getText())){error.setText("Les mots de passe ne correspondent pas");return;}
             String title=hotel.getText(),display=name.getText();int stars=rating.getValue();Set<String> services=new HashSet<>();
@@ -39,31 +39,56 @@ public final class LoginView {
             char[] secret=password.getText().toCharArray();submit.setDisable(true);
             app.run(() -> {try{return app.store().setup(title,stars,display,secret,services);}finally{Arrays.fill(secret,'\0');}},user -> {password.clear();confirmation.clear();app.showShell();},message -> {submit.setDisable(false);error.setText(message);});
         });
-        VBox content=UI.box(20,UI.label("Configurer l'établissement","page-title"),UI.columns(establishment,account),error,UI.row(12,UI.spacer(),submit));content.setMaxWidth(1040);content.setPadding(new Insets(24));
-        VBox center=UI.box(0,content);center.setAlignment(Pos.TOP_CENTER);BorderPane page=new BorderPane();page.setTop(header("Configuration initiale"));page.setCenter(UI.scroll(center));page.setId("setupPage");return page;
+        HBox groups=UI.columns(establishment,account); groups.setAlignment(Pos.TOP_LEFT); groups.setFillHeight(false);
+        VBox content=UI.box(24,UI.label("Configurer l'établissement","page-title"),groups,error,UI.row(12,UI.spacer(),submit));content.setMaxWidth(1040);content.setPadding(new Insets(40,32,32,32));
+        VBox center=UI.box(0,content);center.setAlignment(Pos.TOP_CENTER);BorderPane page=new BorderPane();page.setTop(header());page.setCenter(UI.scroll(center));page.setId("setupPage");return page;
     }
     private Node login(){
-        Label hotel=UI.label("","dialog-title"),category=UI.muted("");ComboBox<Row> accounts=UI.choose(List.of());accounts.setId("loginAccount");
-        PasswordField password=password("loginPassword");password.setPromptText("Mot de passe");
-        ToggleGroup roles=new ToggleGroup();ToggleButton admin=new ToggleButton("Administrateur"),worker=new ToggleButton("Employé");admin.setId("loginAdmin");worker.setId("loginWorker");
-        admin.setToggleGroup(roles);worker.setToggleGroup(roles);admin.setUserData("ADMIN");worker.setUserData("WORKER");admin.setSelected(true);admin.getStyleClass().add("role-choice");worker.getStyleClass().add("role-choice");admin.setMaxWidth(Double.MAX_VALUE);worker.setMaxWidth(Double.MAX_VALUE);
-        Label error=UI.label("","error");error.setWrapText(true);Button submit=new Button("Se connecter");submit.setId("loginSubmit");submit.getStyleClass().add("primary");submit.setMaxWidth(Double.MAX_VALUE);submit.setDefaultButton(true);
-        Runnable load=() -> {
-            if(roles.getSelectedToggle()==null){admin.setSelected(true);return;}String role=roles.getSelectedToggle().getUserData().toString();password.clear();error.setText("");accounts.getItems().clear();submit.setDisable(true);
-            app.run(() -> app.store().loginAccounts(role),rows -> {
-                if(roles.getSelectedToggle()!=null && roles.getSelectedToggle().getUserData().equals(role)){
-                    accounts.setItems(FXCollections.observableArrayList(rows));if(!rows.isEmpty()){accounts.getSelectionModel().selectFirst();submit.setDisable(false);}else{error.setText("Aucun compte actif pour cet espace");}
-                }
-            },error::setText);
-        };
-        roles.selectedToggleProperty().addListener((o,a,b) -> {if(b==null && a!=null){a.setSelected(true);}else{load.run();}});accounts.valueProperty().addListener((o,a,b) -> password.clear());
-        submit.setOnAction(event -> {
-            if(accounts.getValue()==null){error.setText("Sélectionnez votre nom");return;}
-            long id=accounts.getValue().number("id");String role=roles.getSelectedToggle().getUserData().toString();char[] secret=password.getText().toCharArray();submit.setDisable(true);error.setText("");
-            app.run(() -> {try{return app.store().login(id,role,secret);}finally{Arrays.fill(secret,'\0');}},user -> {password.clear();app.showShell();},message -> {submit.setDisable(false);password.clear();error.setText(message);});
+        Label hotel=UI.label("","login-hotel"); hotel.setWrapText(true);
+        TextField adminName=UI.input("","Nom complet",100);adminName.setId("loginName");
+        HBox nameInput=UI.row(8,Icons.get("person"),adminName);nameInput.getStyleClass().add("login-input");adminName.setAccessibleText("Nom complet");HBox.setHgrow(adminName,Priority.ALWAYS);
+        ComboBox<Row> accounts=UI.choose(List.of());accounts.setId("loginAccount"); accounts.setAccessibleText("Compte réceptionniste");
+        ComboBox<String> role=new ComboBox<>(FXCollections.observableArrayList("Administrateur","Réceptionniste"));role.getSelectionModel().selectFirst();role.setMaxWidth(Double.MAX_VALUE);
+        PasswordField password=password("loginPassword"); password.setAccessibleText("Mot de passe");
+        TextField visiblePassword=UI.input("","",128);visiblePassword.setId("loginPasswordVisible");visiblePassword.setAccessibleText("Mot de passe");visiblePassword.textProperty().bindBidirectional(password.textProperty());visiblePassword.setVisible(false);visiblePassword.setManaged(false);
+        StackPane passwordFields=new StackPane(password,visiblePassword);HBox.setHgrow(passwordFields,Priority.ALWAYS);
+        ToggleButton reveal=new ToggleButton();reveal.setId("loginReveal");reveal.setGraphic(Icons.get("eye"));reveal.getStyleClass().add("icon-button");reveal.setAccessibleText("Afficher le mot de passe");
+        reveal.selectedProperty().addListener((o,a,b) -> {
+            password.setVisible(!b);password.setManaged(!b);visiblePassword.setVisible(b);visiblePassword.setManaged(b);
+            reveal.setGraphic(Icons.get(b?"eye-off":"eye"));reveal.setAccessibleText(b?"Masquer le mot de passe":"Afficher le mot de passe");
+            if(b){visiblePassword.requestFocus();visiblePassword.positionCaret(visiblePassword.getLength());}else{password.requestFocus();password.positionCaret(password.getLength());}
         });
-        VBox card=UI.panel(hotel,category,new Separator(),UI.label("Connexion","section-title"),UI.columns(admin,worker),UI.field("Votre nom",accounts),UI.field("Mot de passe",password),error,submit);card.setMaxWidth(480);card.setPrefWidth(480);
-        VBox middle=UI.box(24,card);middle.setAlignment(Pos.CENTER);middle.setPadding(new Insets(40));BorderPane page=new BorderPane();page.setTop(header("Réception"));page.setCenter(middle);
-        app.run(app.store()::hotel,row -> {hotel.setText(row.text("name"));category.setText(row.text("category"));});load.run();return page;
+        HBox passwordInput=UI.row(8,Icons.get("lock"),passwordFields,reveal);passwordInput.getStyleClass().add("login-input");
+        for(TextField field:List.of(adminName,password,visiblePassword)){
+            field.focusedProperty().addListener((o,a,b) -> {nameInput.pseudoClassStateChanged(javafx.css.PseudoClass.getPseudoClass("focused"),adminName.isFocused());passwordInput.pseudoClassStateChanged(javafx.css.PseudoClass.getPseudoClass("focused"),password.isFocused()||visiblePassword.isFocused());});
+        }
+        Label error=UI.label("","error");error.setWrapText(true);error.managedProperty().bind(error.textProperty().isNotEmpty());error.visibleProperty().bind(error.managedProperty());
+        Button submit=UI.button("Se connecter","primary",() -> { });submit.setId("loginSubmit");submit.setDefaultButton(true);submit.setMaxWidth(Double.MAX_VALUE);
+        VBox name=UI.field("Votre nom",nameInput);
+        Runnable load=() -> {
+            boolean admin=role.getSelectionModel().getSelectedIndex()==0;password.clear();error.setText("");
+            name.getChildren().set(1,admin?nameInput:accounts);reveal.setSelected(false);submit.setDisable(false);
+            if(!admin){submit.setDisable(true);app.run(() -> app.store().loginAccounts("WORKER"),rows -> {if (role.getSelectionModel().getSelectedIndex() == 0) { return; } accounts.setItems(FXCollections.observableArrayList(rows));if(!rows.isEmpty()){accounts.getSelectionModel().selectFirst();submit.setDisable(false);}else{error.setText("Aucun réceptionniste actif. L'administrateur peut créer un compte dans Équipe.");}});}
+        };
+        role.valueProperty().addListener((o,a,b) -> load.run());
+        submit.setOnAction(event -> {
+            String permission=role.getSelectionModel().getSelectedIndex()==0?"ADMIN":"WORKER";
+            String display=permission.equals("ADMIN")?adminName.getText():accounts.getValue()==null?"":accounts.getValue().text("label");
+            char[] secret=password.getText().toCharArray();submit.setDisable(true);error.setText("");
+            app.run(() -> {try{return app.store().login(display,permission,secret);}finally{Arrays.fill(secret,'\0');}},user -> {password.clear();app.showShell();},message -> {submit.setDisable(false);password.clear();error.setText(message);});
+        });
+        HBox stars=UI.row(0); stars.getStyleClass().add("hotel-rating");
+        VBox identity=UI.box(4,hotel,stars);
+        HBox heading=UI.row(16,app.logo(48),identity);
+        role.setId("loginRole"); role.setAccessibleText("Rôle");
+        VBox card=UI.box(20,heading,new Separator(),UI.label("Connexion","login-title"),role,name,UI.field("Mot de passe",passwordInput),error,submit);
+        card.getStyleClass().add("login-card");card.setMaxWidth(432);card.setPrefWidth(432);
+        VBox middle=UI.box(0,card);middle.setAlignment(Pos.CENTER);middle.setPadding(new Insets(24));
+        ScrollPane access=UI.scroll(middle);access.setFitToHeight(true);
+        BorderPane page=new BorderPane();page.getStyleClass().add("login-page");page.setTop(header());page.setCenter(access);
+        app.run(app.store()::hotel,row -> {
+            hotel.setText(row.text("name"));int rating=HotelStore.stars(row.text("category")); stars.setAccessibleText(HotelStore.category(rating));
+            if(rating==0){stars.getChildren().setAll(UI.label("Non classé","small"));}else{for(int i=0;i<rating;i++){stars.getChildren().add(Icons.get("star"));}}
+        });load.run();Motion.enter(card);return page;
     }
 }

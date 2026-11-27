@@ -7,7 +7,11 @@ if not defined JAVA_HOME (
 )
 set "PATH=%JAVA_HOME%\bin;%PATH%"
 pushd "%~dp0"
-call mvnw.cmd -B -ntp javafx:run
+if "%~1"=="--seed-demo" (
+  call mvnw.cmd -B -ntp compile javafx:run "-Djavafx.args=--seed-demo"
+) else (
+  call mvnw.cmd -B -ntp compile javafx:run
+)
 set "RESULT=%ERRORLEVEL%"
 popd
 exit /b %RESULT%

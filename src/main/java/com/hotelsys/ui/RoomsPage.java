@@ -16,15 +16,31 @@ public final class RoomsPage {
     private record Data(List<Row> rooms, List<Row> models) { }
     public Node view() {
         HBox actions = UI.row(12);
-        if (app.store().user().admin()) { actions.getChildren().addAll(UI.button("Nouveau modèle", "secondary", () -> model(null)), UI.button("+ Nouvelle chambre", "primary", () -> room(null))); }
-        VBox page = UI.page("Chambres", "Disponibilités, modèles et tarifs", actions); page.setId("page-rooms");
+        if (app.store().user().admin()) { actions.getChildren().addAll(UI.button("Nouveau modèle", "secondary", () -> model(null)), UI.button("Nouvelle chambre", "primary", () -> room(null))); }
+        VBox page = UI.page("Chambres", actions); page.setId("page-rooms");
         TabPane tabs = new TabPane(); tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
-        TilePane cards = new TilePane(20, 20); cards.setPrefTileWidth(284); cards.setPrefColumns(3);
-        VBox modelList = UI.box(16); Tab physical = new Tab("Chambres", UI.scroll(cards)), models = new Tab("Modèles", UI.scroll(modelList)); tabs.getTabs().addAll(physical, models); VBox.setVgrow(tabs, Priority.ALWAYS); page.getChildren().add(tabs);
+        TilePane cards = new TilePane(16, 16);
+        ScrollPane inventory = UI.scroll(cards);
+        cards.widthProperty().addListener((obs, old, newWidth) -> {
+            double width = newWidth.doubleValue();
+            int columns = Math.max(1, (int) ((width + 16) / 284));
+            cards.setPrefTileWidth(Math.max(1, Math.floor((width + 16) / columns) - 17));
+        });
+        VBox modelList = UI.box(16); Tab physical = new Tab("Chambres", inventory), models = new Tab("Modèles", UI.scroll(modelList)); tabs.getTabs().addAll(physical, models); VBox.setVgrow(tabs, Priority.ALWAYS); page.getChildren().add(tabs);
+        if(!actions.getChildren().isEmpty()){actions.getChildren().getLast().setDisable(true);}
         app.run(() -> new Data(app.store().rooms(), app.store().models()), data -> {
-            if (data.rooms().isEmpty()) { cards.getChildren().add(UI.panel(UI.label("Aucune chambre pour le moment", "section-title"), UI.muted("Commencez par créer un modèle, puis vos chambres"))); }
+            if(app.store().user().admin()){
+                Button create=(Button)actions.getChildren().getLast();create.setDisable(data.models().isEmpty());
+            }
+            if (data.rooms().isEmpty()) { VBox empty=UI.panel(Icons.get("bed"),UI.label(data.models().isEmpty()?"Créez un modèle avant vos chambres":"Ajoutez votre première chambre", "section-title"), UI.muted("Un modèle réunit le prix par nuit, la capacité et la liste des équipements"));if(app.store().user().admin()){empty.getChildren().add(UI.button(data.models().isEmpty()?"Créer un modèle":"Créer une chambre","primary",() -> {if(data.models().isEmpty()){model(null);}else{room(null);}}));}cards.getChildren().add(empty); }
             for (Row room : data.rooms()) {
-                VBox card = UI.box(16, UI.row(12, UI.label(room.text("number"), "stat-value"), UI.spacer(), room.flag("active") ? UI.badge(room.text("occupancy")) : UI.badge("CANCELLED")), UI.label(room.text("model"), "section-title"), UI.muted(room.number("bed_count") + " lits · " + room.number("max_sharing_children") + " enfant(s) sans lit"), UI.muted(room.text("facilities")), UI.label(UI.money(room.number("nightly_price")) + " / nuit", "strong"));
+                Label number = UI.label(room.text("number"), "room-number");
+                VBox card = UI.box(12, UI.row(8, number, UI.spacer(), room.flag("active") ? UI.badge(room.text("occupancy")) : UI.badge("CANCELLED")),
+                        UI.box(4, UI.label(room.text("model"), "section-title"), UI.muted(capacity(room))));
+                if (!room.text("facilities").isBlank()) { card.getChildren().add(UI.muted(room.text("facilities").replace("\n"," · "))); }
+                Region gap = new Region(); VBox.setVgrow(gap, Priority.ALWAYS);
+                card.getChildren().addAll(gap, new Separator(), UI.label(UI.money(room.number("nightly_price")) + " / nuit", "strong"));
+                card.setMaxWidth(Double.MAX_VALUE);
                 card.getStyleClass().add("room-card");
                 if (!room.flag("active")) { ((Label) ((HBox) card.getChildren().getFirst()).getChildren().getLast()).setText("Inactive"); }
                 if (app.store().user().admin()) {
@@ -34,57 +50,57 @@ public final class RoomsPage {
             }
             if (data.models().isEmpty()) { modelList.getChildren().add(UI.panel(UI.label("Définissez votre premier modèle", "section-title"), UI.muted("Exemple : Classique, 2 lits, télévision, un enfant sans lit"))); }
             for (Row m : data.models()) {
-                VBox description = UI.box(8, UI.label(m.text("name"), "section-title"), UI.muted(m.number("bed_count") + " lits · " + m.number("max_sharing_children") + " enfant(s) sans lit"), UI.muted(m.text("facilities")));
-                HBox line = UI.row(16, description, UI.spacer()); if (app.store().user().admin()) { line.getChildren().add(UI.button("Modifier le modèle", "secondary", () -> model(m))); } modelList.getChildren().add(UI.panel(line));
+                VBox description = UI.box(4, UI.label(m.text("name"), "section-title"), UI.muted(capacity(m)));
+                if (!m.text("facilities").isBlank()) { description.getChildren().add(UI.muted(m.text("facilities").replace("\n"," · "))); }
+                HBox line = UI.row(16, description, UI.spacer(), UI.label(UI.money(m.number("nightly_price")) + " / nuit", "strong")); if (app.store().user().admin()) { line.getChildren().add(UI.button("Modifier", "secondary", () -> model(m))); } modelList.getChildren().add(UI.panel(line));
             }
         }); return page;
     }
-    private void room(Row existing) {
+    static String capacity(Row model) {
+        return UI.quantity(model.number("bed_count"), "lit", "lits") + " · "
+                + UI.quantity(model.number("max_sharing_children"), "enfant sans lit", "enfants sans lit");
+    }
+    public void room(Row existing) {
         app.run(app.store()::models, models -> {
-            if (models.isEmpty()) { app.toast("Créez d'abord un modèle de chambre"); model(null); return; }
-            UI.Form form = new UI.Form(app.stage(), existing == null ? "Nouvelle chambre" : "Modifier la chambre", "Le prix de la nuit concerne toute la chambre");
+            if (models.isEmpty()) { return; }
+            UI.Form form = new UI.Form(app.stage(), existing == null ? "Nouvelle chambre" : "Modifier la chambre", "Le tarif et les équipements sont hérités du modèle");
             TextField number = UI.input(existing == null ? "" : existing.text("number"), "Ex. 101"); ComboBox<Row> template = UI.choose(models);
             UI.filter(number,20,"[A-Z0-9-]*",true);
             if (existing != null) { UI.select(template, existing.number("model_id")); }
-            TextField price = UI.moneyInput(existing == null ? "" : UI.amount(existing.number("nightly_price")), "0,00"); CheckBox active = new CheckBox("Chambre active pour les nouvelles réservations"); active.setSelected(existing == null || existing.flag("active"));
-            form.body.getChildren().addAll(UI.columns(UI.field("Numéro", number), UI.field("Modèle", template)), UI.field("Prix par nuit · DZD", price), active, UI.muted("Une désactivation conserve les réservations existantes et leur historique"));
-            form.action("Enregistrer la chambre", () -> { long model = UI.id(template), amount = UI.cents(price.getText()); String roomNumber = number.getText(); boolean available = active.isSelected();
-                app.save(form, () -> { app.store().saveRoom(existing == null ? 0 : existing.number("id"), roomNumber, model, amount, available); return true; }, app::refresh); }); form.show();
+            Label price = UI.muted("");
+            price.textProperty().bind(javafx.beans.binding.Bindings.createStringBinding(() -> template.getValue() == null
+                    ? "" : UI.money(template.getValue().number("nightly_price")) + " / nuit", template.valueProperty()));
+            price.managedProperty().bind(price.textProperty().isNotEmpty()); price.visibleProperty().bind(price.managedProperty());
+            CheckBox active = new CheckBox("Chambre active pour les nouvelles réservations"); active.setSelected(existing == null || existing.flag("active"));
+            form.body.getChildren().addAll(UI.columns(UI.field("Numéro", number), UI.field("Modèle", template)), price, active);
+            if (existing != null) { form.body.getChildren().add(UI.muted("Une chambre désactivée conserve son historique.")); }
+            form.action("Enregistrer la chambre", () -> { long model = UI.id(template); String roomNumber = number.getText(); boolean available = active.isSelected();
+                app.save(form, () -> { app.store().saveRoom(existing == null ? 0 : existing.number("id"), roomNumber, model, available); return true; }, app::refresh); }); form.show();
         });
     }
-    private record ModelRates(List<Row> rates,Row hotel) { }
-    private void model(Row existing) {
-        app.run(() -> new ModelRates(existing == null ? List.<Row>of() : app.store().mealRates(existing.number("id")),app.store().hotel()), data -> {
-            List<Row> rates=data.rates();
-            UI.Form form = new UI.Form(app.stage(), existing == null ? "Nouveau modèle" : "Modifier le modèle", "Les nouveaux tarifs s'appliquent aux prochains devis");
-            TextField name = UI.input(existing == null ? "" : existing.text("name"), "Ex. Classique",80); TextField beds = UI.countInput(existing == null ? "2" : existing.text("bed_count"),1,100); TextField sharing = UI.countInput(existing == null ? "1" : existing.text("max_sharing_children"),0,20);
-            TextArea facilities = new TextArea(existing == null ? "" : existing.text("facilities")); facilities.setPromptText("Télévision, balcon, jacuzzi…"); facilities.setPrefRowCount(2); facilities.setWrapText(true);
-            form.body.getChildren().addAll(UI.field("Nom du modèle", name), UI.columns(UI.field("Nombre de lits", beds), UI.field("Enfants sans lit maximum", sharing)), UI.field("Équipements", facilities), UI.label("Repas par personne et par nuit", "section-title"));
-            List<MealFields> fields = new ArrayList<>();
-            for (String meal : List.of("BREAKFAST", "LUNCH", "DINNER")) {
-                Row rate = rates.stream().filter(r -> r.text("meal").equals(meal)).findFirst().orElse(null); MealFields input = new MealFields(meal, rate); fields.add(input);if(data.hotel().flag(meal.toLowerCase(java.util.Locale.ROOT)+"_enabled")){form.body.getChildren().add(input.view());}
+    public void model(Row existing) {
+        UI.Form form = new UI.Form(app.stage(), existing == null ? "Nouveau modèle" : "Modifier le modèle", "Le tarif s’applique à toutes les chambres de ce modèle");
+        TextField name=UI.input(existing==null?"":existing.text("name"),"Ex. Classique",80);
+        TextField beds=UI.countInput(existing==null?"2":existing.text("bed_count"),1,100),sharing=UI.countInput(existing==null?"1":existing.text("max_sharing_children"),0,20);
+        TextField price=UI.moneyInput(existing==null?"":UI.amount(existing.number("nightly_price")),"0,00");
+        VBox equipment=UI.box(8);List<String> items=new ArrayList<>();name.setId("modelName");price.setId("modelPrice");form.submit.setId("saveModel");
+        TextField item=UI.input("","Ajouter un équipement",100);
+        item.setId("equipmentInput");HBox.setHgrow(item,Priority.ALWAYS);
+        Runnable render=() -> {
+            equipment.getChildren().clear();
+            for(String value:List.copyOf(items)){
+                HBox line=UI.row(8,Icons.get("check"),UI.label(value,"strong"),UI.spacer(),UI.button("Retirer","quiet",() -> {items.remove(value);equipment.getChildren().removeIf(n -> value.equals(n.getUserData()));}));line.setUserData(value);line.getStyleClass().add("equipment-row");equipment.getChildren().add(line);
             }
-            form.action("Enregistrer le modèle", () -> {
-                String title = name.getText(), equipment = facilities.getText(); int capacity = UI.integer(beds.getText()), allowance = UI.integer(sharing.getText());
-                List<HotelStore.MealRate> prices = fields.stream().filter(f -> f.enabled.isSelected()).map(MealFields::rate).toList();
-                app.save(form, () -> app.store().saveModel(existing == null ? 0 : existing.number("id"), title, capacity, allowance, equipment, prices), app::refresh);
-            }); form.show();
-        });
-    }
-    private static final class MealFields {
-        private final String meal;
-        private final CheckBox enabled;
-        private final TextField adult, child;
-        private final ComboBox<String> mode = new ComboBox<>(FXCollections.observableArrayList("Prix enfant · DZD", "Remise enfant · %"));
-        MealFields(String meal, Row rate) {
-            this.meal = meal; enabled = new CheckBox(UI.mealName(meal)); enabled.setSelected(rate != null);
-            adult = UI.moneyInput(rate == null ? "" : UI.amount(rate.number("adult_price")), "Adulte · DZD");
-            boolean percent = rate != null && rate.has("child_discount_percent"); mode.setValue(percent ? "Remise enfant · %" : "Prix enfant · DZD");
-            child = UI.input(rate == null ? "" : percent ? rate.text("child_discount_percent") : UI.amount(rate.number("child_fixed_price")), "Tarif enfant");
-            configureChild();mode.valueProperty().addListener((o,a,b) -> {child.setTextFormatter(null);child.clear();configureChild();});
-        }
-        private void configureChild(){if(mode.getValue().contains("%")){UI.countFilter(child,0,100);}else{UI.filter(child,12,"[0-9]{0,9}([,.][0-9]{0,2})?",false);}}
-        Node view() { HBox inputs = UI.columns(UI.field("Adulte · DZD", adult), UI.field("Mode enfant", mode), UI.field("Valeur", child)); inputs.disableProperty().bind(enabled.selectedProperty().not()); return UI.box(10, enabled, inputs); }
-        HotelStore.MealRate rate() { boolean percentage = mode.getValue().contains("%"); return new HotelStore.MealRate(meal, UI.cents(adult.getText()), percentage ? null : UI.cents(child.getText()), percentage ? UI.integer(child.getText()) : null); }
+        };
+        if(existing!=null){for(String value:existing.text("facilities").split("[\\n,·]+")){if(!value.isBlank()){items.add(value.strip());}}}render.run();
+        Button add=UI.button("Ajouter","secondary",() -> {String value=HotelStore.required(item.getText(),"Équipement",100);HotelStore.check(items.stream().noneMatch(v -> v.equalsIgnoreCase(value)),"Cet équipement est déjà dans la liste");items.add(value);item.clear();render.run();Motion.enter(equipment.getChildren().getLast());});
+        add.setId("equipmentAdd");
+        item.setOnAction(e -> {add.fire();e.consume();});
+        form.body.getChildren().addAll(UI.field("Nom du modèle",name),UI.columns(UI.field("Nombre de lits",beds),UI.field("Enfants sans lit maximum",sharing)),UI.field("Prix par nuit · DZD",price),UI.label("Équipements (facultatif)","section-title"),UI.row(8,item,add),equipment);
+        form.action("Enregistrer le modèle",() -> {
+            HotelStore.check(item.getText().isBlank(),"Ajoutez l'équipement saisi à la liste ou effacez-le");
+            String title=name.getText(),facilities=String.join("\n",items);int capacity=UI.integer(beds.getText()),allowance=UI.integer(sharing.getText());long amount=UI.cents(price.getText());
+            app.save(form,() -> app.store().saveModel(existing==null?0:existing.number("id"),title,capacity,allowance,facilities,amount),app::refresh);
+        });form.show();
     }
 }

@@ -20,24 +20,103 @@ public final class Db {
     public Db(Path file) { this.file = file.toAbsolutePath().normalize(); }
     public Path file() { return file; }
 
+    public static final int SCHEMA_VERSION = 5;
+
     public void initialize() throws IOException, SQLException {
         Files.createDirectories(file.getParent());
-        String[] scripts = {resource("001_initial.sql"), resource("002_business.sql")};
-        long oldVersion = read(c -> scalar(c,"PRAGMA user_version"));
-        if (oldVersion > 0 && oldVersion < scripts.length) {
-            Path backups = file.getParent().resolve("backups"); Files.createDirectories(backups);
-            String destination = backups.resolve("hotelsys-v" + oldVersion + "-" + System.currentTimeMillis() + ".db").toString();
-            read(c -> { execute(c,"VACUUM INTO ?",destination); return null; });
+        String schema=resource("001_initial.sql");
+        long version=read(c -> scalar(c,"PRAGMA user_version"));
+        if(version==SCHEMA_VERSION){return;}
+        if(version>SCHEMA_VERSION){throw new SQLException("La base nécessite une version plus récente de HotelSys");}
+        if(version==0){
+            tx(c -> {try(var statement=c.createStatement()){statement.executeUpdate(schema);}return null;});
+            return;
         }
-        tx(c -> {
-            long version = scalar(c, "PRAGMA user_version");
-            if (version > scripts.length) { throw new SQLException("La base nécessite une version plus récente de HotelSys"); }
-            for (int next = (int) version; next < scripts.length; next++) {
-                try (var statement = c.createStatement()) { statement.executeUpdate(scripts[next]); statement.executeUpdate("PRAGMA user_version=" + (next + 1)); }
-            }
-            return null;
-        });
+        Path backups=file.getParent().resolve("backups");Files.createDirectories(backups);
+        String backup=backups.resolve("hotelsys-v"+version+"-"+System.currentTimeMillis()+".db").toString();
+        read(c -> {execute(c,"VACUUM INTO ?",backup);return null;});
+        if (version == 4) {
+            tx(c -> { updateAvailability(c, schema); return null; });
+            return;
+        }
+        try(var c=connect()){
+            execute(c,"PRAGMA foreign_keys=OFF");c.setAutoCommit(false);
+            try {importLegacy(c,schema);c.commit();}
+            catch(SQLException | RuntimeException failure){c.rollback();throw failure;}
+        }
     }
+
+    private static void updateAvailability(Connection c, String schema) throws SQLException {
+        var changed = java.util.Set.of("stay_timing", "room_available_insert", "room_available_update",
+                "guest_insert_guard", "guest_dates_overlap");
+        try (var template = DriverManager.getConnection("jdbc:sqlite::memory:")) {
+            try (var statement = template.createStatement()) { statement.executeUpdate(schema); }
+            for (Row object : schemaObjects(template)) {
+                if (!changed.contains(object.text("name"))) { continue; }
+                execute(c, "DROP " + object.text("type") + " IF EXISTS " + identifier(object.text("name")));
+                execute(c, object.text("sql"));
+            }
+        }
+        execute(c, "PRAGMA user_version=" + SCHEMA_VERSION);
+    }
+
+    private static List<Row> schemaObjects(Connection c) throws SQLException {
+        return rows(c, "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY rowid");
+    }
+
+    private static void importLegacy(Connection c,String schema) throws SQLException {
+        List<Row> definitions;
+        var columns=new LinkedHashMap<String,List<String>>();
+        try(var template=DriverManager.getConnection("jdbc:sqlite::memory:");var statement=template.createStatement()){
+            statement.executeUpdate(schema);
+            definitions=schemaObjects(template);
+            for(Row definition:definitions){if(definition.text("type").equals("table")){
+                String table=definition.text("name");columns.put(table,rows(template,"PRAGMA table_info("+identifier(table)+")").stream().map(r -> r.text("name")).toList());
+            }}
+        }
+        var source=new LinkedHashMap<String,List<Row>>();
+        List<Row> objects=rows(c,"SELECT type,name FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'");
+        for(Row object:objects){if(object.text("type").equals("table")){
+            String table=object.text("name");
+            if(!columns.containsKey(table) && !table.equals("room_model_meal")){throw new SQLException("Table inconnue : "+table+". La base et sa sauvegarde sont conservées.");}
+            source.put(table,rows(c,"SELECT * FROM "+identifier(table)));
+        }}
+        for(String type:List.of("trigger","view","table")){
+            for(Row object:objects){if(object.text("type").equals(type)){execute(c,"DROP "+type+" "+identifier(object.text("name")));}}
+        }
+        for(Row definition:definitions){if(definition.text("type").equals("table")){execute(c,definition.text("sql"));}}
+        long admin=source.getOrDefault("app_user",List.of()).stream().filter(r -> r.text("role").equals("ADMIN"))
+                .sorted(java.util.Comparator.<Row>comparingLong(r -> -r.number("active")).thenComparingLong(r -> r.number("id"))).mapToLong(r -> r.number("id")).findFirst().orElse(0);
+        for(var table:columns.entrySet()){
+            for(Row row:source.getOrDefault(table.getKey(),List.of())){
+                var values=new LinkedHashMap<>(row.values());
+                if(table.getKey().equals("room_model") && !values.containsKey("nightly_price")){
+                    long price=source.getOrDefault("room",List.of()).stream().filter(r -> r.number("model_id")==row.number("id"))
+                            .min(java.util.Comparator.comparingLong(r -> r.number("id"))).map(r -> r.number("nightly_price")).orElse(0L);
+                    values.put("nightly_price",price);
+                }
+                if(table.getKey().equals("app_user") && row.text("role").equals("ADMIN") && row.number("id")!=admin){values.put("role","WORKER");}
+                List<String> fields=table.getValue().stream().filter(values::containsKey).toList();
+                String names=String.join(",",fields.stream().map(Db::identifier).toList());
+                String parameters=String.join(",",java.util.Collections.nCopies(fields.size(),"?"));
+                execute(c,"INSERT INTO "+identifier(table.getKey())+" ("+names+") VALUES ("+parameters+")",fields.stream().map(values::get).toArray());
+            }
+        }
+        if(!source.containsKey("hotel_meal")){
+            for(Row rate:source.getOrDefault("room_model_meal",List.of()).stream().sorted(java.util.Comparator.comparingLong(r -> r.number("model_id"))).toList()){
+                execute(c,"INSERT OR IGNORE INTO hotel_meal(meal,price) VALUES (?,?)",rate.text("meal"),rate.number("adult_price"));
+            }
+        }
+        execute(c,"INSERT OR IGNORE INTO hotel(id,name,category) VALUES (1,'Mon hôtel','Non classé')");
+        execute(c,"INSERT OR IGNORE INTO hotel_meal(meal,price) VALUES ('BREAKFAST',0),('LUNCH',0),('DINNER',0)");
+        for(Row definition:definitions){if(!definition.text("type").equals("table")){execute(c,definition.text("sql"));}}
+        if(!rows(c,"PRAGMA foreign_key_check").isEmpty() || !one(c,"PRAGMA integrity_check").text("integrity_check").equals("ok")){
+            throw new SQLException("Conversion interrompue : relations invalides. La sauvegarde est conservée.");
+        }
+        execute(c,"PRAGMA user_version="+SCHEMA_VERSION);
+    }
+
+    private static String identifier(String name){return "\""+name.replace("\"","\"\"")+"\"";}
 
     private static String resource(String name) throws IOException {
         try (var input = Db.class.getResourceAsStream("/db/migrations/" + name)) {

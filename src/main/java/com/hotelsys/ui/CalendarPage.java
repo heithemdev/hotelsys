@@ -6,82 +6,156 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import javafx.geometry.Insets;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 
+import static java.time.DayOfWeek.MONDAY;
+
 public final class CalendarPage {
+    private static final int WEEKS = 5;
+    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM", Locale.FRENCH);
     private final HotelApp app;
-    private LocalDate start;
-    private final VBox calendar = UI.box(20);
+    private final GridPane grid = new GridPane();
     private final DatePicker jump = new DatePicker();
-    public CalendarPage(HotelApp app) { this.app = app; start = app.store().today().with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)); }
-    private record Data(List<Row> rooms, List<Row> stays, List<Row> todayStays) { }
+    private List<Row> stays = List.of();
+    private LocalDate start;
+
+    public CalendarPage(HotelApp app) {
+        this.app = app;
+    }
+
     public Node view() {
-        VBox page = UI.page("Planning des séjours", "Disponibilité par chambre", UI.button("+ Nouvelle réservation", "primary", () -> BookingEditor.create(app, 0, app.store().today()))); page.setId("page-calendar");
-        Button previous = UI.button("‹", "secondary", () -> { start = start.minusWeeks(1); load(); }); previous.setAccessibleText("Semaine précédente");
-        Button next = UI.button("›", "secondary", () -> { start = start.plusWeeks(1); load(); }); next.setAccessibleText("Semaine suivante");
-        jump.setPrefWidth(180); jump.setEditable(false);
+        Button add = UI.button("Nouvelle réservation", "primary", () -> BookingEditor.create(app, 0, app.store().today()));
+        VBox page = UI.page("Planning des séjours", add);
+        page.setId("page-calendar");
+        UI.bookingPrerequisite(app, add, page);
+
+        jump.setPrefWidth(184);
+        jump.setEditable(false);
+        jump.setAccessibleText("Choisir une semaine");
         jump.setConverter(new javafx.util.StringConverter<>() {
-            @Override public String toString(LocalDate date) { return date == null ? "" : date.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.FRENCH)); }
+            @Override public String toString(LocalDate date) { return date == null ? "" : UI.date(date.toString()); }
             @Override public LocalDate fromString(String text) { return jump.getValue(); }
         });
-        jump.setOnAction(event -> { if (jump.getValue() != null) { LocalDate selected = jump.getValue().with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)); if (!selected.equals(start)) { start = selected; load(); } } });
-        HBox toolbar = UI.row(8, jump, previous, next, UI.button("Aujourd'hui", "secondary", () -> { start = app.store().today().with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)); load(); }), UI.spacer(), UI.badge("RESERVED"), UI.badge("CHECKED_IN"), UI.badge("CHECKED_OUT"));
-        page.getChildren().addAll(UI.panel(toolbar), calendar); load(); return UI.scroll(page);
-    }
-    private void load() {
-        LocalDate week = start;
-        jump.setValue(week);
-        app.run(() -> new Data(app.store().rooms(), app.store().calendar(week, week.plusDays(7)), app.store().calendar(app.store().today().minusDays(1), app.store().today().plusDays(1))), data -> { if (week.equals(start)) { render(week, data); } });
-    }
-    private void render(LocalDate week, Data data) {
-        GridPane grid = new GridPane(); grid.getStyleClass().add("calendar"); grid.setMinWidth(900);
-        grid.getColumnConstraints().add(new ColumnConstraints(150));
-        for (int i = 0; i < 7; i++) { ColumnConstraints day = new ColumnConstraints(); day.setHgrow(Priority.ALWAYS); day.setMinWidth(100); grid.getColumnConstraints().add(day); }
-        grid.add(cell(UI.label("Chambre", "strong"), false, true, 60), 0, 0);
-        for (int day = 0; day < 7; day++) { LocalDate date = week.plusDays(day); grid.add(cell(UI.label(date.format(DateTimeFormatter.ofPattern("EEE d", Locale.FRENCH)), "strong"), date.equals(app.store().today()), true, 60), day + 1, 0); }
-        if (data.rooms().isEmpty()) { calendar.getChildren().setAll(UI.panel(UI.label("Votre planning commence avec les chambres", "section-title"), UI.muted("Créez un modèle et vos chambres pour préparer le premier séjour"), UI.button("Gérer les chambres", "secondary", () -> app.navigate("rooms")))); return; }
-        int row = 1;
-        for (Row room : data.rooms()) {
-            VBox title = UI.box(4, UI.label(room.text("number"), "strong"), UI.label(room.text("model") + " · " + room.number("bed_count") + " lits", "small"));
-            if (!room.flag("active")) { title.getChildren().add(UI.label("Inactive", "small")); }
-            grid.add(cell(title, false, false, 72), 0, row);
-            for (int day = 0; day < 7; day++) {
-                LocalDate date = week.plusDays(day); StackPane tile = cell(new Region(), date.equals(app.store().today()), false, 72);
-                if (room.flag("active")) { tile.setOnMouseClicked(event -> { if (event.getClickCount() == 2) { BookingEditor.create(app, room.number("id"), date.isBefore(app.store().today()) ? app.store().today() : date); } }); }
-                grid.add(tile, day + 1, row);
-            }
-            for (Row stay : data.stays()) {
-                if (stay.number("room_id") != room.number("id")) { continue; }
-                int from = (int) Math.max(0, ChronoUnit.DAYS.between(week, stay.date("arrival")));
-                int until = (int) Math.min(7, ChronoUnit.DAYS.between(week, stay.date("departure")));
-                String summary = stay.number("guests") + (stay.number("guests") == 1 ? " personne" : " personnes");
-                if (stay.text("meals").contains("BREAKFAST")) { summary += " · Petit-déj."; }
-                VBox bar = UI.box(4, UI.label(stay.text("label"), "strong"), UI.label(summary, "small"));
-                bar.getStyleClass().addAll("stay-bar", "status-" + stay.text("status").toLowerCase(Locale.ROOT)); bar.setMaxHeight(60); GridPane.setMargin(bar, new Insets(6));
-                bar.setOnMouseClicked(event -> ReservationsPage.open(app, stay.number("reservation_id"))); bar.setFocusTraversable(true); bar.setAccessibleText(stay.text("label") + ", chambre " + room.text("number"));
-                bar.setOnKeyPressed(event -> { if (event.getCode() == javafx.scene.input.KeyCode.ENTER) { ReservationsPage.open(app, stay.number("reservation_id")); } });
-                grid.add(bar, from + 1, row, Math.max(1, until - from), 1);
-            }
-            row++;
+        Button previous = UI.button("‹", "secondary", () -> showWeek(start.minusWeeks(1)));
+        previous.setId("previousWeek");
+        previous.setAccessibleText("Semaine précédente");
+        Button next = UI.button("›", "secondary", () -> showWeek(start.plusWeeks(1)));
+        next.setId("nextWeek");
+        next.setAccessibleText("Semaine suivante");
+        jump.valueProperty().addListener((observable, old, selected) -> { if (selected != null) { showWeek(selected); } });
+        HBox toolbar = UI.row(8, jump, previous, next,
+                UI.button("Aujourd’hui", "secondary", () -> showWeek(app.store().today())), UI.spacer(),
+                UI.badge("RESERVED"), UI.badge("CHECKED_IN"), UI.badge("CHECKED_OUT"));
+
+        grid.getStyleClass().add("calendar");
+        for (int day = 0; day < 7; day++) {
+            ColumnConstraints column = new ColumnConstraints();
+            column.setPercentWidth(100.0 / 7);
+            grid.getColumnConstraints().add(column);
+            String name = MONDAY.plus(day).getDisplayName(java.time.format.TextStyle.FULL, Locale.FRENCH);
+            Label heading = UI.label(name, "calendar-head");
+            heading.setMaxWidth(Double.MAX_VALUE);
+            grid.add(heading, day, 0);
         }
-        ScrollPane horizontal = new ScrollPane(grid); horizontal.setFitToWidth(true); horizontal.getStyleClass().add("clean-scroll"); horizontal.setVbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+
+        VBox daily = UI.box(0);
+        page.getChildren().addAll(toolbar, grid, daily);
+        showWeek(app.store().today());
+        app.run(app.store()::calendar, rows -> {
+            stays = rows;
+            render();
+            LocalDate today = app.store().today();
+            daily.getChildren().setAll(UI.columns(
+                    dayList("Arrivées du jour", "arrival", "RESERVED", today),
+                    dayList("Départs du jour", "departure", "CHECKED_IN", today)));
+        });
+        return UI.scroll(page);
+    }
+
+    private void showWeek(LocalDate date) {
+        LocalDate monday = date.with(TemporalAdjusters.previousOrSame(MONDAY));
+        boolean changed = !monday.equals(start);
+        start = monday;
+        if (changed) { render(); }
+        if (!monday.equals(jump.getValue())) { jump.setValue(monday); }
+    }
+
+    private void render() {
+        grid.getChildren().remove(7, grid.getChildren().size());
         LocalDate today = app.store().today();
-        VBox arrivals = dayList("Arrivées du jour", data.todayStays().stream().filter(s -> s.date("arrival").equals(today) && s.text("status").equals("RESERVED")).toList());
-        VBox departures = dayList("Départs du jour", data.todayStays().stream().filter(s -> s.date("departure").equals(today) && s.text("status").equals("CHECKED_IN")).toList());
-        calendar.getChildren().setAll(horizontal, UI.columns(arrivals, departures));
+        LocalDate end = start.plusWeeks(WEEKS);
+        List<List<Row>> days = new ArrayList<>();
+        for (int day = 0; day < WEEKS * 7; day++) { days.add(new ArrayList<>()); }
+        for (Row stay : stays) {
+            LocalDate arrival = stay.date("arrival"), departure = stay.date("departure").plusDays(1);
+            LocalDate first = arrival.isBefore(start) ? start : arrival;
+            LocalDate last = departure.isAfter(end) ? end : departure;
+            for (LocalDate date = first; date.isBefore(last); date = date.plusDays(1)) {
+                days.get((int) ChronoUnit.DAYS.between(start, date)).add(stay);
+            }
+        }
+        for (int day = 0; day < days.size(); day++) {
+            LocalDate date = start.plusDays(day);
+            List<Row> bookings = days.get(day);
+            bookings.sort(Comparator.comparing(stay -> stay.text("status").equals("CHECKED_OUT")));
+            grid.add(dayCell(date, today, bookings), day % 7, day / 7 + 1);
+        }
     }
-    private VBox dayList(String title, List<Row> rows) {
+
+    private Node dayCell(LocalDate date, LocalDate today, List<Row> bookings) {
+        Label label = UI.label(date.format(DAY), "planning-date");
+        VBox cell = UI.box(2, label);
+        cell.getStyleClass().add("calendar-cell");
+        cell.setPrefHeight(88);
+        cell.setMinWidth(0);
+        if (date.equals(today)) { cell.getStyleClass().add("calendar-today"); }
+        if (!date.isBefore(today)) {
+            cell.setOnMouseClicked(event -> {
+                if (event.getClickCount() == 2) { BookingEditor.create(app, 0, date); }
+            });
+        }
+        for (Row stay : bookings.subList(0, Math.min(2, bookings.size()))) {
+            Button entry = UI.button(stayLabel(stay), "stay-bar", () -> ReservationsPage.open(app, stay.number("reservation_id")));
+            entry.getStyleClass().add("status-" + stay.text("status").toLowerCase(Locale.ROOT));
+            entry.setAccessibleText(stayLabel(stay) + ", " + UI.statusName(stay.text("status")));
+            entry.setTooltip(new Tooltip(entry.getAccessibleText() + "\n" + UI.date(stay.text("arrival")) + " à " + stay.text("arrival_time")
+                    + " → " + UI.date(stay.text("departure")) + " à " + stay.text("departure_time")));
+            entry.setMaxWidth(Double.MAX_VALUE);
+            entry.setMinWidth(0);
+            entry.setOnMouseClicked(event -> event.consume());
+            cell.getChildren().add(entry);
+        }
+        if (bookings.size() > 2) {
+            MenuButton more = new MenuButton("+" + (bookings.size() - 2));
+            more.getStyleClass().add("calendar-more");
+            more.setOnMouseClicked(event -> event.consume());
+            more.setAccessibleText("Autres séjours du " + UI.date(date.toString()));
+            for (Row stay : bookings.subList(2, bookings.size())) {
+                MenuItem item = new MenuItem(stayLabel(stay) + " · " + UI.statusName(stay.text("status")));
+                item.setOnAction(e -> ReservationsPage.open(app, stay.number("reservation_id")));
+                more.getItems().add(item);
+            }
+            cell.getChildren().add(more);
+        }
+        return cell;
+    }
+
+    private String stayLabel(Row stay) { return stay.text("number") + " · " + stay.text("label"); }
+
+    private VBox dayList(String title, String field, String status, LocalDate today) {
         VBox panel = UI.panel(UI.label(title, "section-title"));
+        List<Row> rows = stays.stream().filter(s -> s.date(field).equals(today) && s.text("status").equals(status)).toList();
         if (rows.isEmpty()) { panel.getChildren().add(UI.muted("Aucun séjour prévu")); }
-        for (Row stay : rows) { panel.getChildren().add(UI.row(8, UI.button(stay.text("label"), "quiet", () -> ReservationsPage.open(app, stay.number("reservation_id"))), UI.spacer(), UI.label("Ch. " + stay.text("number"), "small"))); } return panel;
-    }
-    private StackPane cell(Node node, boolean today, boolean head, double height) {
-        StackPane pane = new StackPane(node); pane.setAlignment(javafx.geometry.Pos.CENTER_LEFT); pane.setMinHeight(height); pane.setPrefHeight(height); pane.setMaxHeight(height); pane.getStyleClass().add("calendar-cell");
-        if (head) { pane.getStyleClass().add("calendar-head"); } if (today) { pane.getStyleClass().add("calendar-today"); } return pane;
+        for (Row stay : rows) {
+            panel.getChildren().add(UI.row(8, UI.button(stay.text("label"), "quiet", () -> ReservationsPage.open(app, stay.number("reservation_id"))),
+                    UI.spacer(), UI.label("Ch. " + stay.text("number"), "small")));
+        }
+        return panel;
     }
 }

@@ -1,74 +1,9 @@
-# UML et modèle relationnel
+# Diagrammes UML
 
-Ouvrir [HotelSys.mdj](HotelSys.mdj) dans StarUML. Le projet contient un diagramme de classes du domaine et un diagramme de cas d'utilisation avec réceptionniste et administrateur. Les attributs des classes sont issus du schéma SQL ; ce sont les concepts du domaine, pas une obligation de créer une classe Java par table.
+Le fichier [HotelSys.mdj](HotelSys.mdj) contient douze diagrammes éditables sous StarUML 6.
 
-Le modèle relationnel détaillé, les cardinalités et les contraintes se trouvent dans [database.md](../database.md). Le [schéma initial](../../src/main/resources/db/migrations/001_initial.sql) et sa [migration métier](../../src/main/resources/db/migrations/002_business.sql) restent la référence pour les évolutions.
+- Le modèle du sujet n° 08 présente les cas d’utilisation et les classes du système de réservation demandé.
+- Le modèle de l’application HotelSys présente l’authentification, les opérations de réception, la caisse, l’administration et les classes métier.
+- Cinq diagrammes de séquence décrivent la réservation du sujet, l’authentification, l’encaissement, le départ avec remise des clés et le remboursement.
 
-```mermaid
-classDiagram
-    class Person {
-        long id
-        String lastName
-        String firstName
-        LocalDate birthDate
-        String sex
-    }
-    class RoomModel {
-        String name
-        int bedCount
-        int maxSharingChildren
-        String facilities
-    }
-    class Room {
-        String number
-        long nightlyPrice
-        boolean active
-    }
-    class Reservation {
-        long id
-        Instant bookedAt
-    }
-    class ReservationRoom {
-        LocalDate arrival
-        LocalDate departure
-        String status
-        long agreedNightlyPrice
-    }
-    class ReservationGuest {
-        boolean requiresBed
-        String mealTariff
-    }
-    class ReservationRoomMeal {
-        String meal
-        long adultPrice
-        long childPrice
-    }
-    class AppUser {
-        String username
-        String role
-        boolean active
-    }
-    class CashSession {
-        long openingFloat
-        long countedCash
-    }
-    class CashEntry {
-        String kind
-        long amount
-    }
-    RoomModel "1" --> "0..*" Room
-    Person "1" --> "0..*" Reservation : titulaire
-    Reservation "1" *-- "1..*" ReservationRoom
-    Room "1" --> "0..*" ReservationRoom
-    ReservationRoom "1" *-- "1..*" ReservationGuest
-    Person "1" --> "0..*" ReservationGuest
-    ReservationRoom "1" *-- "0..*" ReservationRoomMeal
-    AppUser "1" --> "0..*" Reservation : crée
-    AppUser "1" --> "0..*" CashSession : ouvre
-    CashSession "1" *-- "0..*" CashEntry
-    Reservation "0..1" --> "0..*" CashEntry
-```
-
-Les notions adulte/enfant sont dérivées de la naissance et de la règle concernée : admission du titulaire, besoin d'un lit et prix des repas. Une sous-table adulte et une sous-table enfant ne sont pas nécessaires.
-
-Le format natif a été construit à partir de la structure des [exemples officiels StarUML](https://github.com/staruml/staruml-samples) et vérifié pour l'unicité de ses identifiants et la résolution de toutes ses références. Son ouverture dans StarUML n'a pas été vérifiée sur ce poste.
+Le [rapport A4](../../Rapport-HotelSys.pdf) relie ces diagrammes aux besoins et au schéma SQLite. Le guide de lecture se trouve en page 2. Le [dictionnaire des tables](../database.md) détaille la base de l’application.
