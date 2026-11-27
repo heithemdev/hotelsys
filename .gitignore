@@ -1,0 +1,14 @@
+target/
+data/
+.tools/
+.idea/
+.vscode/
+*.iml
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log
+.env
+hs_err_pid*
