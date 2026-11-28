@@ -100,7 +100,7 @@
               "left": 142,
               "top": 22,
               "width": 424,
-              "height": 426,
+              "height": 445,
               "nameCompartment": {
                 "$ref": "hotelsys-report-00010"
               },
@@ -2024,6 +2024,64 @@
                 "$ref": "hotelsys-report-00123"
               },
               "fillColor": "#f0f4ef"
+            },
+            {
+              "_type": "UMLNoteView",
+              "_id": "hotelsys-report-02012",
+              "left": 408,
+              "top": 230,
+              "width": 144,
+              "height": 56,
+              "text": "Un même adulte\npeut faire plusieurs\nréservations.",
+              "font": "Arial;12;0",
+              "fillColor": "#f0f4ef",
+              "_parent": {
+                "$ref": "hotelsys-report-00007"
+              }
+            },
+            {
+              "_type": "UMLNoteLinkView",
+              "_id": "hotelsys-report-02013",
+              "head": {
+                "$ref": "hotelsys-report-00081"
+              },
+              "tail": {
+                "$ref": "hotelsys-report-02012"
+              },
+              "points": "480:258;344:258;299:297",
+              "lineStyle": 1,
+              "_parent": {
+                "$ref": "hotelsys-report-00007"
+              }
+            },
+            {
+              "_type": "UMLNoteView",
+              "_id": "hotelsys-report-02014",
+              "left": 207,
+              "top": 409,
+              "width": 272,
+              "height": 42,
+              "text": "Si l’adulte choisit une autre chambre,\nle système vérifie sa disponibilité.",
+              "font": "Arial;12;0",
+              "fillColor": "#f0f4ef",
+              "_parent": {
+                "$ref": "hotelsys-report-00007"
+              }
+            },
+            {
+              "_type": "UMLNoteLinkView",
+              "_id": "hotelsys-report-02015",
+              "head": {
+                "$ref": "hotelsys-report-00108"
+              },
+              "tail": {
+                "$ref": "hotelsys-report-02014"
+              },
+              "points": "343:430;322:365",
+              "lineStyle": 1,
+              "_parent": {
+                "$ref": "hotelsys-report-00007"
+              }
             }
           ],
           "name": "Cas d’utilisation du sujet",
